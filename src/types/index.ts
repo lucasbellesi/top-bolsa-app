@@ -1,6 +1,7 @@
 export type MarketType = 'US' | 'AR';
 export type TimeframeType = '1H' | '1D' | '1W' | '1M' | 'YTD';
 export type DataSourceType = 'LIVE' | 'CACHE' | 'MOCK' | 'UNAVAILABLE';
+export type CurrencyType = 'USD' | 'ARS';
 
 export interface SparklinePoint {
     timestamp: number;

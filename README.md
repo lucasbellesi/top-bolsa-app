@@ -8,6 +8,7 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 
 - Market switch: `US` and `AR (BYMA)`
 - Timeframe filters: `1H`, `1D`, `1W`, `1M`, `YTD`
+- Currency switch: `ARS` or `USD`
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
 - Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure

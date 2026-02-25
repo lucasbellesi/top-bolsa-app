@@ -1,19 +1,45 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStockRanking } from '../hooks/useStockRanking';
-import { DataSourceType, MarketType, TimeframeType } from '../types';
+import { CurrencyType, DataSourceType, MarketType, TimeframeType } from '../types';
 import { MarketTabs } from '../components/MarketTabs';
 import { TimeFilters } from '../components/TimeFilters';
+import { CurrencyToggle } from '../components/CurrencyToggle';
 import { StockListItem } from '../components/StockListItem';
+import { useUsdArsRate } from '../hooks/useUsdArsRate';
+import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
 
 export const HomeScreen = () => {
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
+    const [currency, setCurrency] = useState<CurrencyType>('ARS');
 
     const { data: rankingData, isLoading, isError, refetch } = useStockRanking(market, timeframe);
     const stocks = rankingData?.stocks ?? [];
     const source = rankingData?.source;
+    const nativeCurrency = getNativeCurrencyForMarket(market);
+    const needsFxConversion = currency !== nativeCurrency;
+    const { data: usdToArsRate, isLoading: isFxLoading } = useUsdArsRate(needsFxConversion);
+    const conversionFactor = getConversionFactor(market, currency, usdToArsRate ?? null);
+    const effectiveCurrency: CurrencyType = conversionFactor === null ? nativeCurrency : currency;
+    const isLoadingWithFx = isLoading || (needsFxConversion && isFxLoading && conversionFactor === null);
+    const showFxUnavailableWarning = needsFxConversion && !isFxLoading && conversionFactor === null;
+
+    const displayStocks = useMemo(() => {
+        if (conversionFactor === null || conversionFactor === 1) {
+            return stocks;
+        }
+
+        return stocks.map((stock) => ({
+            ...stock,
+            price: convertValue(stock.price, conversionFactor),
+            sparkline: stock.sparkline.map((point) => ({
+                ...point,
+                value: convertValue(point.value, conversionFactor),
+            })),
+        }));
+    }, [stocks, conversionFactor]);
 
     const sourceBadgeClasses: Record<DataSourceType, string> = {
         LIVE: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400',
@@ -44,12 +70,23 @@ export const HomeScreen = () => {
                         Demo mode: showing simulated prices.
                     </Text>
                 ) : null}
+                {showFxUnavailableWarning ? (
+                    <Text className="text-amber-400 mt-2 text-xs">
+                        FX unavailable. Showing {nativeCurrency} values.
+                    </Text>
+                ) : null}
+                {needsFxConversion && conversionFactor !== null && usdToArsRate ? (
+                    <Text className="text-neutral-500 mt-2 text-xs">
+                        FX USD/ARS: {usdToArsRate.toFixed(2)}
+                    </Text>
+                ) : null}
             </View>
 
             <MarketTabs activeMarket={market} onSelect={setMarket} />
             <TimeFilters activeTimeframe={timeframe} onSelect={setTimeframe} />
+            <CurrencyToggle activeCurrency={currency} onSelect={setCurrency} />
 
-            {isLoading ? (
+            {isLoadingWithFx ? (
                 <View className="flex-1 justify-center items-center">
                     <ActivityIndicator size="large" color="#10b981" />
                 </View>
@@ -61,7 +98,7 @@ export const HomeScreen = () => {
                     </TouchableOpacity>
                 </View>
             ) : (
-                stocks.length === 0 ? (
+                displayStocks.length === 0 ? (
                     <View className="flex-1 justify-center items-center px-6">
                         <Text className="text-amber-400 font-semibold text-center">
                             Market data temporarily unavailable.
@@ -75,9 +112,15 @@ export const HomeScreen = () => {
                     </View>
                 ) : (
                     <FlatList
-                        data={stocks}
+                        data={displayStocks}
                         keyExtractor={(item) => item.id}
-                        renderItem={({ item, index }) => <StockListItem stock={item} index={index} />}
+                        renderItem={({ item, index }) => (
+                            <StockListItem
+                                stock={item}
+                                index={index}
+                                currency={effectiveCurrency}
+                            />
+                        )}
                         showsVerticalScrollIndicator={false}
                         contentContainerStyle={{ paddingBottom: 40 }}
                         // Ensure fast layout and no shifts:

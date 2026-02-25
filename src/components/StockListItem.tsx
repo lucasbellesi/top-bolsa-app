@@ -1,17 +1,24 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import { StockData } from '../types';
+import { CurrencyType, StockData } from '../types';
 import { LineChart } from 'react-native-wagmi-charts';
 import { TrendingUp, TrendingDown } from 'lucide-react-native';
 
 interface StockListItemProps {
     stock: StockData;
     index: number;
+    currency: CurrencyType;
 }
 
-export const StockListItem = ({ stock, index }: StockListItemProps) => {
+export const StockListItem = ({ stock, index, currency }: StockListItemProps) => {
     const isPositive = stock.percentChange >= 0;
     const color = isPositive ? '#10b981' : '#ef4444'; // emerald-500 : red-500
+    const formattedPrice = new Intl.NumberFormat(currency === 'ARS' ? 'es-AR' : 'en-US', {
+        style: 'currency',
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(stock.price);
 
     return (
         <View className="flex-row items-center justify-between p-4 mb-3 mx-4 bg-neutral-900 rounded-2xl border border-neutral-800">
@@ -44,7 +51,7 @@ export const StockListItem = ({ stock, index }: StockListItemProps) => {
                     className="text-white font-bold text-xl"
                     style={{ fontFamily: 'Courier', letterSpacing: -0.5 }}
                 >
-                    ${stock.price.toFixed(2)}
+                    {formattedPrice}
                 </Text>
                 <View className={`flex-row items-center mt-1 px-2 py-1 rounded-md ${isPositive ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
                     {isPositive ? (
