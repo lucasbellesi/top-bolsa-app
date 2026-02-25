@@ -45,27 +45,31 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
 };
 
 export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
-    try {
-        const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean }>(
-            'fetch-argentina-market',
-            {
-                body: { timeframe },
+    if (supabase) {
+        try {
+            const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean }>(
+                'fetch-argentina-market',
+                {
+                    body: { timeframe },
+                }
+            );
+
+            if (!error && data?.stocks?.length) {
+                return {
+                    stocks: data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10),
+                    source: mapFunctionSourceToUiSource(data.source),
+                    stale: data.stale ?? false,
+                };
             }
-        );
 
-        if (!error && data?.stocks?.length) {
-            return {
-                stocks: data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10),
-                source: mapFunctionSourceToUiSource(data.source),
-                stale: data.stale ?? false,
-            };
+            if (error) {
+                console.warn('Argentina market edge function error:', error.message);
+            }
+        } catch (error) {
+            console.warn('Argentina market edge function invocation failed:', error);
         }
-
-        if (error) {
-            console.warn('Argentina market edge function error:', error.message);
-        }
-    } catch (error) {
-        console.warn('Argentina market edge function invocation failed:', error);
+    } else {
+        console.warn('Supabase client is not configured. Falling back to cache/mock data.');
     }
 
     const cached = await fetchArgentinaFromCache(timeframe);
@@ -112,6 +116,10 @@ interface ArgentinaCacheRow {
 }
 
 const fetchArgentinaFromCache = async (timeframe: TimeframeType): Promise<StockData[]> => {
+    if (!supabase) {
+        return [];
+    }
+
     try {
         const { data, error } = await supabase
             .from('argentina_market_cache')
