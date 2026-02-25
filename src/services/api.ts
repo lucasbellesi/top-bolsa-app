@@ -2,6 +2,15 @@ import { DataSourceType, MarketType, TimeframeType, StockData, SparklinePoint, S
 import { supabase } from './supabase';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
+const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
+
+const shouldUseMockFallback = (): boolean => {
+    const runtimeDevFlag = typeof globalThis !== 'undefined'
+        && '__DEV__' in globalThis
+        && Boolean((globalThis as Record<string, unknown>).__DEV__);
+
+    return runtimeDevFlag || EXPO_ALLOW_MOCK_FALLBACK;
+};
 
 // Helper to generate mock sparkline
 const generateMockSparkline = (basePrice: number, points: number = 20): SparklinePoint[] => {
@@ -40,8 +49,12 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
         console.error("US Market Fetch Error", error);
     }
 
-    // Fallback to mock data if API limits or errors occur
-    return { stocks: getMockUSData(), source: 'MOCK' };
+    // Avoid fabricated prices in production releases.
+    if (shouldUseMockFallback()) {
+        return { stocks: getMockUSData(), source: 'MOCK' };
+    }
+
+    return { stocks: [], source: 'UNAVAILABLE', stale: true };
 };
 
 export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
@@ -77,7 +90,11 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
         return { stocks: cached, source: 'CACHE', stale: true };
     }
 
-    return { stocks: getMockARData(), source: 'MOCK' };
+    if (shouldUseMockFallback()) {
+        return { stocks: getMockARData(), source: 'MOCK' };
+    }
+
+    return { stocks: [], source: 'UNAVAILABLE', stale: true };
 };
 
 const getMockUSData = (): StockData[] => {

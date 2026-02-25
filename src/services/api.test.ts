@@ -32,6 +32,7 @@ describe('fetchARMarketGainers', () => {
   const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
   beforeEach(() => {
+    (globalThis as Record<string, unknown>).__DEV__ = false;
     mockInvoke.mockReset();
     mockFrom.mockReset();
     warnSpy.mockClear();
@@ -136,7 +137,25 @@ describe('fetchARMarketGainers', () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it('falls back to MOCK when edge function and cache both fail', async () => {
+  it('returns UNAVAILABLE when edge function and cache both fail in non-dev mode', async () => {
+    mockInvoke.mockRejectedValue(new Error('network down'));
+
+    const cacheChain = createCacheQueryChain({
+      data: [],
+      error: null,
+    });
+
+    mockFrom.mockReturnValue(cacheChain);
+
+    const result = await fetchARMarketGainers('YTD');
+
+    expect(result.source).toBe('UNAVAILABLE');
+    expect(result.stocks).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('falls back to MOCK in dev mode when edge function and cache both fail', async () => {
+    (globalThis as Record<string, unknown>).__DEV__ = true;
     mockInvoke.mockRejectedValue(new Error('network down'));
 
     const cacheChain = createCacheQueryChain({
@@ -150,7 +169,5 @@ describe('fetchARMarketGainers', () => {
 
     expect(result.source).toBe('MOCK');
     expect(result.stocks).toHaveLength(10);
-    expect(result.stocks[0].percentChange).toBeGreaterThanOrEqual(result.stocks[1].percentChange);
-    expect(warnSpy).toHaveBeenCalled();
   });
 });

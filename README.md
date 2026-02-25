@@ -11,6 +11,7 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
 - Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure
+- Production-safe fallback: no simulated prices when live/cache data is unavailable
 
 ## Data Flow
 
@@ -52,6 +53,8 @@ npm install
 EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
 EXPO_PUBLIC_STOCK_API_KEY=<your-alphavantage-key>
+# Optional: enable mock fallback outside dev (default false)
+EXPO_PUBLIC_ALLOW_MOCK_FALLBACK=false
 ```
 
 3. Link Supabase project
@@ -112,3 +115,13 @@ npm run start
 - Edge function: `supabase/functions/fetch-argentina-market/index.ts`
 - Cache schema: `supabase/argentina_market_cache_schema.sql`
 - Migration (applied): `supabase/migrations/20260225014841_argentina_market_cache.sql`
+- Privacy policy template: `PRIVACY_POLICY.md`
+
+## Legal & Play Store Checklist
+
+1. Publish a public privacy policy URL (HTTPS) using `PRIVACY_POLICY.md` as base.
+2. Complete Google Play Data Safety form using your real SDK/services.
+3. Keep financial disclaimer visible in-app and in store listing:
+   - "Informational use only. Not investment advice."
+4. Verify market data licensing for commercial/ads use before launch.
+5. If AdMob is enabled, implement consent flow where required (EEA/UK/CH).
