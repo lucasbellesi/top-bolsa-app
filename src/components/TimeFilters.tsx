@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { TimeframeType } from '../types';
+import { useAppTheme } from '../theme/ThemeContext';
 
 interface TimeFiltersProps {
     activeTimeframe: TimeframeType;
@@ -8,6 +9,7 @@ interface TimeFiltersProps {
 }
 
 export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => {
+    const { isDark } = useAppTheme();
     const timeframes: TimeframeType[] = ['1H', '1D', '1W', '1M', 'YTD'];
     return (
         <View className="flex-row justify-between px-4 mb-4 gap-x-2">
@@ -17,9 +19,9 @@ export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => 
                     <TouchableOpacity
                         key={tf}
                         onPress={() => onSelect(tf)}
-                        className={`flex-1 items-center py-2 rounded-full ${isActive ? 'bg-emerald-600' : 'bg-neutral-800'}`}
+                        className={`flex-1 items-center py-2 rounded-full ${isActive ? 'bg-emerald-600' : isDark ? 'bg-neutral-800' : 'bg-slate-200'}`}
                     >
-                        <Text className={`font-medium ${isActive ? 'text-white' : 'text-neutral-400'}`}>
+                        <Text className={`font-medium ${isActive ? 'text-white' : isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
                             {tf}
                         </Text>
                     </TouchableOpacity>

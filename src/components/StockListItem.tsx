@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { CurrencyType, StockData } from '../types';
 import { LineChart } from 'react-native-wagmi-charts';
 import { TrendingUp, TrendingDown } from 'lucide-react-native';
+import { useAppTheme } from '../theme/ThemeContext';
 
 interface StockListItemProps {
     stock: StockData;
@@ -12,6 +13,7 @@ interface StockListItemProps {
 }
 
 export const StockListItem = ({ stock, index, currency, onPress }: StockListItemProps) => {
+    const { isDark } = useAppTheme();
     const isPositive = stock.percentChange >= 0;
     const color = isPositive ? '#10b981' : '#ef4444'; // emerald-500 : red-500
     const formattedPrice = new Intl.NumberFormat(currency === 'ARS' ? 'es-AR' : 'en-US', {
@@ -26,17 +28,17 @@ export const StockListItem = ({ stock, index, currency, onPress }: StockListItem
             disabled={!onPress}
             onPress={onPress}
             activeOpacity={0.85}
-            className="flex-row items-center justify-between p-4 mb-3 mx-4 bg-neutral-900 rounded-2xl border border-neutral-800"
+            className={`flex-row items-center justify-between p-4 mb-3 mx-4 rounded-2xl border ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}
         >
 
             {/* Rank & Ticker */}
             <View className="flex-row items-center w-1/4">
-                <Text className="text-neutral-500 font-bold text-lg mr-3 min-w-[20px]">
+                <Text className={`font-bold text-lg mr-3 min-w-[20px] ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
                     {index + 1}
                 </Text>
                 <View>
-                    <Text className="text-white font-bold text-lg">{stock.ticker}</Text>
-                    <Text className="text-neutral-500 text-xs">{stock.market}</Text>
+                    <Text className={`font-bold text-lg ${isDark ? 'text-white' : 'text-slate-900'}`}>{stock.ticker}</Text>
+                    <Text className={`text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>{stock.market}</Text>
                 </View>
             </View>
 
@@ -54,7 +56,7 @@ export const StockListItem = ({ stock, index, currency, onPress }: StockListItem
             {/* Price & Change */}
             <View className="items-end w-1/3">
                 <Text
-                    className="text-white font-bold text-xl"
+                    className={`font-bold text-xl ${isDark ? 'text-white' : 'text-slate-900'}`}
                     style={{ fontFamily: 'Courier', letterSpacing: -0.5 }}
                 >
                     {formattedPrice}

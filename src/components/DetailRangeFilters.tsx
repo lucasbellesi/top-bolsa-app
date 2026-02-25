@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { DetailRangeType } from '../types';
+import { useAppTheme } from '../theme/ThemeContext';
 
 interface DetailRangeFiltersProps {
     activeRange: DetailRangeType;
@@ -8,6 +9,7 @@ interface DetailRangeFiltersProps {
 }
 
 export const DetailRangeFilters = ({ activeRange, onSelect }: DetailRangeFiltersProps) => {
+    const { isDark } = useAppTheme();
     const ranges: DetailRangeType[] = ['1H', '1D', '1W', '1M', '3M', '6M', '1Y', 'YTD'];
 
     return (
@@ -23,9 +25,9 @@ export const DetailRangeFilters = ({ activeRange, onSelect }: DetailRangeFilters
                         <TouchableOpacity
                             key={range}
                             onPress={() => onSelect(range)}
-                            className={`px-4 py-2 rounded-full ${isActive ? 'bg-emerald-600' : 'bg-neutral-800'}`}
+                            className={`px-4 py-2 rounded-full ${isActive ? 'bg-emerald-600' : isDark ? 'bg-neutral-800' : 'bg-slate-200'}`}
                         >
-                            <Text className={`font-medium ${isActive ? 'text-white' : 'text-neutral-400'}`}>
+                            <Text className={`font-medium ${isActive ? 'text-white' : isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
                                 {range}
                             </Text>
                         </TouchableOpacity>

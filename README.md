@@ -9,6 +9,7 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 - Market switch: `US` and `AR (BYMA)`
 - Timeframe filters: `1H`, `1D`, `1W`, `1M`, `YTD`
 - Currency switch: `ARS` or `USD`
+- Theme switch: `dark` or `light`
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
 - Tap any stock to open a dedicated detail screen

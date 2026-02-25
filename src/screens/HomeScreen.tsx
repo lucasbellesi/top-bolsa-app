@@ -8,10 +8,12 @@ import { CurrencyType, DataSourceType, DetailRangeType, MarketType, TimeframeTyp
 import { MarketTabs } from '../components/MarketTabs';
 import { TimeFilters } from '../components/TimeFilters';
 import { CurrencyToggle } from '../components/CurrencyToggle';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { StockListItem } from '../components/StockListItem';
 import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
 import { RootStackParamList } from '../navigation/types';
+import { useAppTheme } from '../theme/ThemeContext';
 
 const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType => {
     switch (timeframe) {
@@ -27,6 +29,7 @@ const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType =>
 };
 
 export const HomeScreen = () => {
+    const { isDark } = useAppTheme();
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Home'>>();
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
@@ -66,13 +69,13 @@ export const HomeScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-black">
-            <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
 
             <View className="px-4 pt-6 pb-4">
-                <Text className="text-white text-3xl font-extrabold tracking-tight">Top Gainers</Text>
-                <Text className="text-neutral-400 mt-1">Real-time market leaders</Text>
-                <Text className="text-neutral-500 mt-1 text-xs">
+                <Text className={`text-3xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Top Gainers</Text>
+                <Text className={`mt-1 ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Real-time market leaders</Text>
+                <Text className={`mt-1 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
                     Informational use only. Not investment advice.
                 </Text>
                 {source ? (
@@ -83,7 +86,7 @@ export const HomeScreen = () => {
                     </View>
                 ) : null}
                 {source === 'MOCK' ? (
-                    <Text className="text-neutral-400 mt-2 text-xs">
+                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
                         Demo mode: showing simulated prices.
                     </Text>
                 ) : null}
@@ -93,13 +96,14 @@ export const HomeScreen = () => {
                     </Text>
                 ) : null}
                 {needsFxConversion && conversionFactor !== null && usdToArsRate ? (
-                    <Text className="text-neutral-500 mt-2 text-xs">
+                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
                         FX USD/ARS: {usdToArsRate.toFixed(2)}
                     </Text>
                 ) : null}
             </View>
 
             <MarketTabs activeMarket={market} onSelect={setMarket} />
+            <ThemeToggle />
             <TimeFilters activeTimeframe={timeframe} onSelect={setTimeframe} />
             <CurrencyToggle activeCurrency={currency} onSelect={setCurrency} />
 
@@ -120,7 +124,7 @@ export const HomeScreen = () => {
                         <Text className="text-amber-400 font-semibold text-center">
                             Market data temporarily unavailable.
                         </Text>
-                        <Text className="text-neutral-400 mt-2 text-center">
+                        <Text className={`mt-2 text-center ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
                             Try again in a few minutes.
                         </Text>
                         <TouchableOpacity onPress={() => refetch()} className="mt-4">

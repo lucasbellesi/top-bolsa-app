@@ -10,6 +10,8 @@ import { useStockDetail } from '../hooks/useStockDetail';
 import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
 import { DetailRangeFilters } from '../components/DetailRangeFilters';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { useAppTheme } from '../theme/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StockDetail'>;
 
@@ -21,6 +23,7 @@ const sourceBadgeClasses: Record<DataSourceType, string> = {
 };
 
 export const StockDetailScreen = ({ route }: Props) => {
+    const { isDark } = useAppTheme();
     const { ticker, market, currency, initialRange } = route.params;
     const [range, setRange] = useState<DetailRangeType>(initialRange);
 
@@ -55,7 +58,7 @@ export const StockDetailScreen = ({ route }: Props) => {
 
     if (isLoadingWithFx) {
         return (
-            <SafeAreaView className="flex-1 bg-black justify-center items-center">
+            <SafeAreaView className={`flex-1 justify-center items-center ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
                 <ActivityIndicator size="large" color="#10b981" />
             </SafeAreaView>
         );
@@ -63,8 +66,8 @@ export const StockDetailScreen = ({ route }: Props) => {
 
     if (isError || !displayData) {
         return (
-            <SafeAreaView className="flex-1 bg-black">
-                <StatusBar barStyle="light-content" backgroundColor="#000" />
+            <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
                 <View className="flex-1 justify-center items-center px-8">
                     <Text className="text-red-500 font-bold mb-4 text-center">
                         Failed to load stock details.
@@ -90,13 +93,13 @@ export const StockDetailScreen = ({ route }: Props) => {
     const lastUpdatedText = new Date(displayData.lastUpdatedAt).toLocaleString();
 
     return (
-        <SafeAreaView className="flex-1 bg-black">
-            <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
 
             <View className="px-4 pt-4 pb-2">
-                <Text className="text-white text-3xl font-extrabold tracking-tight">{displayData.ticker}</Text>
-                <Text className="text-neutral-400 mt-1">Market: {displayData.market}</Text>
-                <Text className="text-neutral-500 mt-1 text-xs">Last update: {lastUpdatedText}</Text>
+                <Text className={`text-3xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>{displayData.ticker}</Text>
+                <Text className={`mt-1 ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Market: {displayData.market}</Text>
+                <Text className={`mt-1 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>Last update: {lastUpdatedText}</Text>
                 <View className="mt-3 self-start">
                     <Text className={`text-xs font-bold px-2 py-1 rounded-md border ${sourceBadgeClasses[displayData.source]}`}>
                         {displayData.source}
@@ -108,17 +111,18 @@ export const StockDetailScreen = ({ route }: Props) => {
                     </Text>
                 ) : null}
                 {needsFxConversion && conversionFactor !== null && usdToArsRate ? (
-                    <Text className="text-neutral-500 mt-2 text-xs">
+                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
                         FX USD/ARS: {usdToArsRate.toFixed(2)}
                     </Text>
                 ) : null}
             </View>
 
+            <ThemeToggle />
             <DetailRangeFilters activeRange={range} onSelect={setRange} />
 
-            <View className="mx-4 p-4 bg-neutral-900 rounded-2xl border border-neutral-800">
-                <Text className="text-neutral-400 text-sm">Current price</Text>
-                <Text className="text-white text-3xl font-bold mt-2">{formattedPrice}</Text>
+            <View className={`mx-4 p-4 rounded-2xl border ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
+                <Text className={`text-sm ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Current price</Text>
+                <Text className={`text-3xl font-bold mt-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>{formattedPrice}</Text>
                 <View className={`self-start flex-row items-center mt-3 px-2 py-1 rounded-md ${isPositive ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
                     {isPositive ? (
                         <TrendingUp color="#10b981" size={16} />
@@ -131,7 +135,7 @@ export const StockDetailScreen = ({ route }: Props) => {
                 </View>
             </View>
 
-            <View className="mx-4 mt-4 p-4 bg-neutral-900 rounded-2xl border border-neutral-800">
+            <View className={`mx-4 mt-4 p-4 rounded-2xl border ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
                 {displayData.series.length > 0 ? (
                     <LineChart.Provider data={displayData.series}>
                         <LineChart height={240} width={chartWidth}>
@@ -140,7 +144,7 @@ export const StockDetailScreen = ({ route }: Props) => {
                     </LineChart.Provider>
                 ) : (
                     <View className="py-20 items-center">
-                        <Text className="text-neutral-400">No chart data available.</Text>
+                        <Text className={isDark ? 'text-neutral-400' : 'text-slate-600'}>No chart data available.</Text>
                     </View>
                 )}
             </View>
