@@ -1,71 +1,98 @@
-# Top 10 Stock Gainers App
+# Top Bolsa App
 
-A real-time dual-market Android App built with Expo, React Native, and Supabase. The app allows users to seamlessly switch between the Wall Street (NYSE/NASDAQ) and Argentina (BYMA) markets to track the top 10 daily, weekly, monthly, and yearly stock gainers.
+React Native app (Expo + TypeScript) that shows top gainers for:
+- US market (Alpha Vantage)
+- Argentina BYMA market (Yahoo Finance via Supabase Edge Function)
 
-## ✨ Features
+## Features
 
-- **Dual Market Tracking**: Switch between US (NYSE/NASDAQ) and AR (BYMA) markets in real-time.
-- **Dynamic Timeframes**: Filter the top gainers by `1D`, `1W`, `1M`, or `YTD`.
-- **Rankings**: Automatically sorts the top 10 tickers by highest percentage change.
-- **Sparkline Charts**: Visualizes stock momentum via `react-native-wagmi-charts` for each ticker.
-- **High-Contrast Dark Mode**: Premium UI designed using NativeWind v4 with tailored readability for numerical financial data.
+- Market switch: `US` and `AR (BYMA)`
+- Timeframe filters: `1D`, `1W`, `1M`, `YTD`
+- Top 10 ranking by percentage change
+- Sparkline chart per ticker
+- Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure
 
-## 🛠 Tech Stack
+## Data Flow
 
-- **Framework**: Expo (React Native managed workflow) with TypeScript.
-- **Styling**: NativeWind (Tailwind CSS v3) + Lucide React Native icons.
-- **State Management**: `@tanstack/react-query` for high-performance API caching and fetching.
-- **Database / Backend**: Supabase (Edge Functions + cache tables with RLS enabled).
-- **APIs**: Alpha Vantage (US Market), Yahoo Finance via `yahoo-finance2` (BYMA with `.BA` suffix).
+US (`fetchUSMarketGainers`)
+- Source: Alpha Vantage (`TOP_GAINERS_LOSERS`)
+- Fallback: local mock data
 
----
+Argentina (`fetchARMarketGainers`)
+- 1st attempt: Supabase Edge Function `fetch-argentina-market`
+- Edge Function source: `yahoo-finance2` using BYMA symbols with `.BA` suffix
+- Cache write/read table: `public.argentina_market_cache`
+- App fallback chain: edge function -> cache table -> local mock
 
-## 🚀 Getting Started
+## Stack
 
-To run this project locally, ensure you have Node.js and npm/yarn installed.
+- Expo SDK 54 / React Native 0.81 / React 19
+- TypeScript + React Query
+- NativeWind + wagmi charts
+- Supabase (database + edge functions)
 
-### 1. Clone the repository
+## Prerequisites
+
+- Node.js 18+
+- Android Studio + emulator (for Android run)
+- Supabase CLI (`npm i -g supabase` or `npx supabase ...`)
+- Supabase project
+
+## Setup
+
+1. Clone and install
 ```bash
 git clone https://github.com/lucasbellesi/top-bolsa-app.git
 cd top-bolsa-app
-```
-
-### 2. Install dependencies
-```bash
 npm install
 ```
 
-### 3. Setup Environment Variables
-Create a `.env` file at the root of the project and add your appropriate API keys according to `env.d.ts` and Supabase configuration.
+2. Create `.env`
 ```env
-EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-EXPO_PUBLIC_STOCK_API_KEY=your_alphavantage_key
+EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+EXPO_PUBLIC_STOCK_API_KEY=<your-alphavantage-key>
 ```
 
-### 4. Run the App
-Start the Expo development server:
+3. Link Supabase project
 ```bash
-npx expo start
+supabase login
+supabase link --project-ref <your-project-ref>
 ```
-You can now open the app on your physical device using the Expo Go app or an Android emulator/iOS simulator by pressing `a` or `i` in the terminal.
 
----
+4. Apply database schema
+```bash
+supabase db push --include-all
+```
 
-## 🗄 Supabase Setup
-
-1. Run the SQL schema files in Supabase SQL Editor:
-   - `supabase/stock_cache_schema.sql`
-   - `supabase/argentina_market_cache_schema.sql`
-
-2. Deploy the Edge Function that fetches BYMA quotes through `yahoo-finance2`:
+5. Deploy BYMA function
 ```bash
 supabase functions deploy fetch-argentina-market
 ```
 
-3. Set function secrets (Dashboard or CLI):
+6. Configure cache TTL (optional)
 ```bash
 supabase secrets set ARGENTINA_CACHE_TTL_SECONDS=300
 ```
 
-The function first attempts live Yahoo (`*.BA`) quotes and historical data, persists them to `argentina_market_cache`, and falls back to cached rows when Yahoo fails or rate-limits.
+## Run
+
+Android (recommended):
+```bash
+npm run android
+```
+
+Other targets:
+```bash
+npm run ios
+npm run web
+npm run start
+```
+
+## Relevant Files
+
+- App fetch logic: `src/services/api.ts`
+- Supabase client: `src/services/supabase.ts`
+- Edge function: `supabase/functions/fetch-argentina-market/index.ts`
+- Cache schema: `supabase/argentina_market_cache_schema.sql`
+- Migration (applied): `supabase/migrations/20260225014841_argentina_market_cache.sql`
