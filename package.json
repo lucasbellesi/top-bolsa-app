@@ -7,6 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build:android:preview": "eas-cli build -p android --profile preview",
+    "build:android:production": "eas-cli build -p android --profile production",
     "postinstall": "patch-package",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -31,6 +33,7 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.10",
+    "eas-cli": "^18.0.5",
     "patch-package": "^8.0.1",
     "tailwindcss": "^3.3.2",
     "typescript": "~5.9.2",

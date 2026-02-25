@@ -26,6 +26,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0e6bb190-38ac-4b2d-bef6-769bc3cd57a4"
+      }
+    },
+    "owner": "lucasbellesidev"
   }
 }
