@@ -75,6 +75,22 @@ supabase functions deploy fetch-argentina-market
 supabase secrets set ARGENTINA_CACHE_TTL_SECONDS=300
 ```
 
+7. Configure BYMA warm-up scheduler values (required once)
+- Open your Supabase SQL Editor and run:
+```sql
+update public.internal_scheduler_config
+set value = 'https://<your-project-ref>.supabase.co', updated_at = now()
+where key = 'supabase_project_url';
+
+update public.internal_scheduler_config
+set value = '<your-anon-key>', updated_at = now()
+where key = 'supabase_anon_key';
+
+select public.warm_argentina_market_cache();
+```
+
+The migration `20260225020407_schedule_argentina_cache_warmup.sql` schedules cron job `warm-argentina-market-cache` every 5 minutes.
+
 ## Run
 
 Android (recommended):
