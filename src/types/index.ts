@@ -1,5 +1,6 @@
 export type MarketType = 'US' | 'AR';
 export type TimeframeType = '1D' | '1W' | '1M' | 'YTD';
+export type DataSourceType = 'LIVE' | 'CACHE' | 'MOCK';
 
 export interface SparklinePoint {
     timestamp: number;
@@ -13,4 +14,10 @@ export interface StockData {
     price: number;
     percentChange: number;
     sparkline: SparklinePoint[];
+}
+
+export interface StockRankingData {
+    stocks: StockData[];
+    source: DataSourceType;
+    stale?: boolean;
 }

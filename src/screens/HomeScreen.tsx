@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStockRanking } from '../hooks/useStockRanking';
-import { MarketType, TimeframeType } from '../types';
+import { DataSourceType, MarketType, TimeframeType } from '../types';
 import { MarketTabs } from '../components/MarketTabs';
 import { TimeFilters } from '../components/TimeFilters';
 import { StockListItem } from '../components/StockListItem';
@@ -11,15 +11,30 @@ export const HomeScreen = () => {
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
 
-    const { data: stocks, isLoading, isError, refetch } = useStockRanking(market, timeframe);
+    const { data: rankingData, isLoading, isError, refetch } = useStockRanking(market, timeframe);
+    const stocks = rankingData?.stocks ?? [];
+    const source = rankingData?.source;
+
+    const sourceBadgeClasses: Record<DataSourceType, string> = {
+        LIVE: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400',
+        CACHE: 'bg-amber-500/20 border-amber-500/40 text-amber-400',
+        MOCK: 'bg-neutral-600/20 border-neutral-500/40 text-neutral-300',
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-black">
             <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-            <View className="px-4 py-6">
+            <View className="px-4 pt-6 pb-4">
                 <Text className="text-white text-3xl font-extrabold tracking-tight">Top Gainers</Text>
                 <Text className="text-neutral-400 mt-1">Real-time market leaders</Text>
+                {source ? (
+                    <View className="mt-3 self-start">
+                        <Text className={`text-xs font-bold px-2 py-1 rounded-md border ${sourceBadgeClasses[source]}`}>
+                            {source}
+                        </Text>
+                    </View>
+                ) : null}
             </View>
 
             <MarketTabs activeMarket={market} onSelect={setMarket} />

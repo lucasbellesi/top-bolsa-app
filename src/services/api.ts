@@ -1,4 +1,4 @@
-import { MarketType, TimeframeType, StockData, SparklinePoint } from '../types';
+import { DataSourceType, MarketType, TimeframeType, StockData, SparklinePoint, StockRankingData } from '../types';
 import { supabase } from './supabase';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
@@ -16,13 +16,13 @@ const generateMockSparkline = (basePrice: number, points: number = 20): Sparklin
     return line;
 };
 
-export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<StockData[]> => {
+export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
     try {
         const res = await fetch(`https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`);
         const data = await res.json();
 
         if (data.top_gainers && Array.isArray(data.top_gainers)) {
-            return data.top_gainers.slice(0, 10).map((item: any) => {
+            const stocks = data.top_gainers.slice(0, 10).map((item: any) => {
                 const price = parseFloat(item.price);
                 const changePercent = parseFloat(item.change_percentage.replace('%', ''));
                 return {
@@ -34,18 +34,19 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
                     sparkline: generateMockSparkline(price) // API doesn't return points so we mock intra-day line
                 };
             });
+            return { stocks, source: 'LIVE' };
         }
     } catch (error) {
         console.error("US Market Fetch Error", error);
     }
 
     // Fallback to mock data if API limits or errors occur
-    return getMockUSData();
+    return { stocks: getMockUSData(), source: 'MOCK' };
 };
 
-export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockData[]> => {
+export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
     try {
-        const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[] }>(
+        const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean }>(
             'fetch-argentina-market',
             {
                 body: { timeframe },
@@ -53,7 +54,11 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
         );
 
         if (!error && data?.stocks?.length) {
-            return data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10);
+            return {
+                stocks: data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10),
+                source: mapFunctionSourceToUiSource(data.source),
+                stale: data.stale ?? false,
+            };
         }
 
         if (error) {
@@ -65,10 +70,10 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
 
     const cached = await fetchArgentinaFromCache(timeframe);
     if (cached.length > 0) {
-        return cached;
+        return { stocks: cached, source: 'CACHE', stale: true };
     }
 
-    return getMockARData();
+    return { stocks: getMockARData(), source: 'MOCK' };
 };
 
 const getMockUSData = (): StockData[] => {
@@ -84,6 +89,18 @@ const getMockUSData = (): StockData[] => {
         { id: 'NFLX', ticker: 'NFLX', market: 'US', price: 610.20, percentChange: 0.3, sparkline: generateMockSparkline(610.20) },
         { id: 'INTC', ticker: 'INTC', market: 'US', price: 45.10, percentChange: 0.1, sparkline: generateMockSparkline(45.10) },
     ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange);
+};
+
+const mapFunctionSourceToUiSource = (source?: string): DataSourceType => {
+    switch ((source || '').toLowerCase()) {
+        case 'live':
+            return 'LIVE';
+        case 'cache':
+        case 'cache_fallback':
+            return 'CACHE';
+        default:
+            return 'CACHE';
+    }
 };
 
 interface ArgentinaCacheRow {
