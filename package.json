@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.10",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^3.3.2",
     "typescript": "~5.9.2"
   },
