@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, SafeAreaView, StatusBar, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStockRanking } from '../hooks/useStockRanking';
 import { MarketType, TimeframeType } from '../types';
 import { MarketTabs } from '../components/MarketTabs';
