@@ -15,8 +15,8 @@ A real-time dual-market Android App built with Expo, React Native, and Supabase.
 - **Framework**: Expo (React Native managed workflow) with TypeScript.
 - **Styling**: NativeWind (Tailwind CSS v3) + Lucide React Native icons.
 - **State Management**: `@tanstack/react-query` for high-performance API caching and fetching.
-- **Database / Backend**: Supabase integration for future metadata storage (Row Level Security enabled).
-- **APIs**: Alpha Vantage (US Market), and Mock fallbacks for BYMA tickers.
+- **Database / Backend**: Supabase (Edge Functions + cache tables with RLS enabled).
+- **APIs**: Alpha Vantage (US Market), Yahoo Finance via `yahoo-finance2` (BYMA with `.BA` suffix).
 
 ---
 
@@ -40,7 +40,7 @@ Create a `.env` file at the root of the project and add your appropriate API key
 ```env
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-EXPO_PUBLIC_STOCK_API_KEY=your_alphavantage_or_finnhub_key
+EXPO_PUBLIC_STOCK_API_KEY=your_alphavantage_key
 ```
 
 ### 4. Run the App
@@ -52,6 +52,20 @@ You can now open the app on your physical device using the Expo Go app or an And
 
 ---
 
-## 🗄 Database Setup (Supabase)
+## 🗄 Supabase Setup
 
-If you plan to utilize the metadata caching via Supabase, execute the SQL found in `supabase/stock_cache_schema.sql` inside your Supabase project's SQL Editor to instantiate the `stock_cache` table.
+1. Run the SQL schema files in Supabase SQL Editor:
+   - `supabase/stock_cache_schema.sql`
+   - `supabase/argentina_market_cache_schema.sql`
+
+2. Deploy the Edge Function that fetches BYMA quotes through `yahoo-finance2`:
+```bash
+supabase functions deploy fetch-argentina-market
+```
+
+3. Set function secrets (Dashboard or CLI):
+```bash
+supabase secrets set ARGENTINA_CACHE_TTL_SECONDS=300
+```
+
+The function first attempts live Yahoo (`*.BA`) quotes and historical data, persists them to `argentina_market_cache`, and falls back to cached rows when Yahoo fails or rate-limits.

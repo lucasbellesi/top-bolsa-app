@@ -1,4 +1,5 @@
 import { MarketType, TimeframeType, StockData, SparklinePoint } from '../types';
+import { supabase } from './supabase';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
 
@@ -43,22 +44,31 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
 };
 
 export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockData[]> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve(([
-                { id: 'GGAL', ticker: 'GGAL', market: 'AR', price: 4500.50, percentChange: 5.2, sparkline: generateMockSparkline(4500.50) },
-                { id: 'YPFD', ticker: 'YPFD', market: 'AR', price: 21500.00, percentChange: 4.8, sparkline: generateMockSparkline(21500.00) },
-                { id: 'PAMP', ticker: 'PAMP', market: 'AR', price: 2800.75, percentChange: 3.5, sparkline: generateMockSparkline(2800.75) },
-                { id: 'AL30', ticker: 'AL30', market: 'AR', price: 450.20, percentChange: 2.1, sparkline: generateMockSparkline(450.20) },
-                { id: 'TXAR', ticker: 'TXAR', market: 'AR', price: 980.00, percentChange: 1.8, sparkline: generateMockSparkline(980.00) },
-                { id: 'LOMA', ticker: 'LOMA', market: 'AR', price: 1550.00, percentChange: 1.5, sparkline: generateMockSparkline(1550.00) },
-                { id: 'CEPU', ticker: 'CEPU', market: 'AR', price: 1200.00, percentChange: 1.2, sparkline: generateMockSparkline(1200.00) },
-                { id: 'EDN', ticker: 'EDN', market: 'AR', price: 850.50, percentChange: 0.9, sparkline: generateMockSparkline(850.50) },
-                { id: 'CRES', ticker: 'CRES', market: 'AR', price: 1100.25, percentChange: 0.5, sparkline: generateMockSparkline(1100.25) },
-                { id: 'SUPV', ticker: 'SUPV', market: 'AR', price: 480.00, percentChange: 0.2, sparkline: generateMockSparkline(480.00) },
-            ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange));
-        }, 600);
-    });
+    try {
+        const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[] }>(
+            'fetch-argentina-market',
+            {
+                body: { timeframe },
+            }
+        );
+
+        if (!error && data?.stocks?.length) {
+            return data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10);
+        }
+
+        if (error) {
+            console.warn('Argentina market edge function error:', error.message);
+        }
+    } catch (error) {
+        console.warn('Argentina market edge function invocation failed:', error);
+    }
+
+    const cached = await fetchArgentinaFromCache(timeframe);
+    if (cached.length > 0) {
+        return cached;
+    }
+
+    return getMockARData();
 };
 
 const getMockUSData = (): StockData[] => {
@@ -73,5 +83,62 @@ const getMockUSData = (): StockData[] => {
         { id: 'AMD', ticker: 'AMD', market: 'US', price: 160.00, percentChange: 0.5, sparkline: generateMockSparkline(160.00) },
         { id: 'NFLX', ticker: 'NFLX', market: 'US', price: 610.20, percentChange: 0.3, sparkline: generateMockSparkline(610.20) },
         { id: 'INTC', ticker: 'INTC', market: 'US', price: 45.10, percentChange: 0.1, sparkline: generateMockSparkline(45.10) },
+    ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange);
+};
+
+interface ArgentinaCacheRow {
+    ticker: string;
+    market: MarketType;
+    price: number;
+    percent_change: number;
+    sparkline: SparklinePoint[] | null;
+}
+
+const fetchArgentinaFromCache = async (timeframe: TimeframeType): Promise<StockData[]> => {
+    try {
+        const { data, error } = await supabase
+            .from('argentina_market_cache')
+            .select('ticker,market,price,percent_change,sparkline')
+            .eq('timeframe', timeframe)
+            .order('percent_change', { ascending: false })
+            .limit(10);
+
+        if (error || !data) {
+            if (error) {
+                console.warn('Argentina market cache read failed:', error.message);
+            }
+            return [];
+        }
+
+        return (data as ArgentinaCacheRow[])
+            .map((row) => ({
+                id: row.ticker,
+                ticker: row.ticker,
+                market: 'AR' as const,
+                price: Number(row.price),
+                percentChange: Number(row.percent_change),
+                sparkline: Array.isArray(row.sparkline) ? row.sparkline : [],
+            }))
+            .filter((row) => Number.isFinite(row.price) && Number.isFinite(row.percentChange))
+            .sort((a, b) => b.percentChange - a.percentChange)
+            .slice(0, 10);
+    } catch (error) {
+        console.warn('Argentina market cache fallback failed:', error);
+        return [];
+    }
+};
+
+const getMockARData = (): StockData[] => {
+    return ([
+        { id: 'GGAL', ticker: 'GGAL', market: 'AR', price: 4500.50, percentChange: 5.2, sparkline: generateMockSparkline(4500.50) },
+        { id: 'YPFD', ticker: 'YPFD', market: 'AR', price: 21500.00, percentChange: 4.8, sparkline: generateMockSparkline(21500.00) },
+        { id: 'PAMP', ticker: 'PAMP', market: 'AR', price: 2800.75, percentChange: 3.5, sparkline: generateMockSparkline(2800.75) },
+        { id: 'BMA', ticker: 'BMA', market: 'AR', price: 6200.00, percentChange: 2.1, sparkline: generateMockSparkline(6200.00) },
+        { id: 'TXAR', ticker: 'TXAR', market: 'AR', price: 980.00, percentChange: 1.8, sparkline: generateMockSparkline(980.00) },
+        { id: 'LOMA', ticker: 'LOMA', market: 'AR', price: 1550.00, percentChange: 1.5, sparkline: generateMockSparkline(1550.00) },
+        { id: 'CEPU', ticker: 'CEPU', market: 'AR', price: 1200.00, percentChange: 1.2, sparkline: generateMockSparkline(1200.00) },
+        { id: 'EDN', ticker: 'EDN', market: 'AR', price: 850.50, percentChange: 0.9, sparkline: generateMockSparkline(850.50) },
+        { id: 'CRES', ticker: 'CRES', market: 'AR', price: 1100.25, percentChange: 0.5, sparkline: generateMockSparkline(1100.25) },
+        { id: 'SUPV', ticker: 'SUPV', market: 'AR', price: 480.00, percentChange: 0.2, sparkline: generateMockSparkline(480.00) },
     ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange);
 };
