@@ -27,6 +27,18 @@ interface ArgentinaCacheRow {
   cached_at: string;
 }
 
+interface TickerFetchTrace {
+  ticker: string;
+  ok: boolean;
+  durationMs: number;
+  reason?: string;
+}
+
+interface TickerFetchResult {
+  stock: StockData | null;
+  trace: TickerFetchTrace;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -60,6 +72,47 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false },
 });
+
+const average = (values: number[]): number =>
+  values.length === 0 ? 0 : Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2));
+
+const toErrorDetails = (error: unknown): Record<string, unknown> => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.split("\n").slice(0, 3).join(" | "),
+    };
+  }
+
+  return { message: String(error) };
+};
+
+const logEvent = (
+  level: "INFO" | "WARN" | "ERROR",
+  event: string,
+  details: Record<string, unknown>,
+): void => {
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...details,
+  };
+
+  const serialized = JSON.stringify(payload);
+  if (level === "ERROR") {
+    console.error(serialized);
+    return;
+  }
+
+  if (level === "WARN") {
+    console.warn(serialized);
+    return;
+  }
+
+  console.log(serialized);
+};
 
 const toResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -186,8 +239,9 @@ const isFreshCache = (rows: ArgentinaCacheRow[]): boolean => {
   });
 };
 
-const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<StockData | null> => {
+const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<TickerFetchResult> => {
   const yahooTicker = `${ticker}.BA`;
+  const startedAt = Date.now();
 
   try {
     const quote = await yahooFinance.quote(yahooTicker);
@@ -201,7 +255,15 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<St
     ].find((value) => isFiniteNumber(value));
 
     if (!isFiniteNumber(priceCandidate)) {
-      return null;
+      return {
+        stock: null,
+        trace: {
+          ticker,
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          reason: "missing_price_candidate",
+        },
+      };
     }
 
     const historical = await yahooFinance.historical(yahooTicker, {
@@ -217,26 +279,48 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<St
       : computePercentFromHistory(historical, priceCandidate);
 
     return {
-      id: ticker,
-      ticker,
-      market: "AR",
-      price: priceCandidate,
-      percentChange,
-      sparkline,
+      stock: {
+        id: ticker,
+        ticker,
+        market: "AR",
+        price: priceCandidate,
+        percentChange,
+        sparkline,
+      },
+      trace: {
+        ticker,
+        ok: true,
+        durationMs: Date.now() - startedAt,
+      },
     };
   } catch (error) {
-    console.error(`Yahoo fetch failed for ${yahooTicker}`, error);
-    return null;
+    return {
+      stock: null,
+      trace: {
+        ticker,
+        ok: false,
+        durationMs: Date.now() - startedAt,
+        reason: toErrorDetails(error).message as string,
+      },
+    };
   }
 };
 
-const fetchLiveStocks = async (timeframe: TimeframeType): Promise<StockData[]> => {
+const fetchLiveStocks = async (
+  timeframe: TimeframeType,
+): Promise<{ stocks: StockData[]; traces: TickerFetchTrace[] }> => {
   const results = await Promise.all(BYMA_TICKERS.map((ticker) => fetchTicker(ticker, timeframe)));
 
-  return results
+  const stocks = results
+    .map((result) => result.stock)
     .filter((stock): stock is StockData => stock !== null)
     .sort((a, b) => b.percentChange - a.percentChange)
     .slice(0, 10);
+
+  return {
+    stocks,
+    traces: results.map((result) => result.trace),
+  };
 };
 
 const upsertCache = async (timeframe: TimeframeType, stocks: StockData[]): Promise<void> => {
@@ -269,54 +353,136 @@ const upsertCache = async (timeframe: TimeframeType, stocks: StockData[]): Promi
 };
 
 Deno.serve(async (req) => {
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
+  const requestStartedAt = Date.now();
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
+    logEvent("WARN", "byma_request_invalid_method", {
+      requestId,
+      method: req.method,
+    });
     return toResponse(405, { error: "Method not allowed" });
   }
 
   const body = await req.json().catch(() => ({}));
   const timeframe = parseTimeframe((body as Record<string, unknown>).timeframe);
+  logEvent("INFO", "byma_request_started", {
+    requestId,
+    timeframe,
+    cacheTtlSeconds: CACHE_TTL_SECONDS,
+  });
 
+  const cacheReadStartedAt = Date.now();
   const cachedRows = await readCache(timeframe);
-  if (isFreshCache(cachedRows)) {
+  const cacheReadMs = Date.now() - cacheReadStartedAt;
+  const freshCache = isFreshCache(cachedRows);
+  logEvent("INFO", "byma_cache_read", {
+    requestId,
+    timeframe,
+    cacheRows: cachedRows.length,
+    cacheReadMs,
+    freshCache,
+  });
+
+  if (freshCache) {
+    logEvent("INFO", "byma_request_completed", {
+      requestId,
+      timeframe,
+      source: "cache",
+      durationMs: Date.now() - requestStartedAt,
+    });
     return toResponse(200, {
       source: "cache",
       timeframe,
       stocks: mapCacheRowsToStocks(cachedRows),
+      requestId,
     });
   }
 
   try {
-    const liveStocks = await fetchLiveStocks(timeframe);
+    const liveFetchStartedAt = Date.now();
+    const { stocks: liveStocks, traces } = await fetchLiveStocks(timeframe);
+    const liveFetchMs = Date.now() - liveFetchStartedAt;
+
+    const failedTraces = traces.filter((trace) => !trace.ok);
+    logEvent("INFO", "byma_live_fetch_summary", {
+      requestId,
+      timeframe,
+      requestedTickers: BYMA_TICKERS.length,
+      successCount: traces.length - failedTraces.length,
+      failureCount: failedTraces.length,
+      avgTickerDurationMs: average(traces.map((trace) => trace.durationMs)),
+      liveFetchMs,
+      failedTickers: failedTraces.map((trace) => ({
+        ticker: trace.ticker,
+        reason: trace.reason ?? "unknown",
+      })),
+    });
 
     if (liveStocks.length === 0) {
       throw new Error("Yahoo returned no BYMA rows.");
     }
 
+    const upsertStartedAt = Date.now();
     await upsertCache(timeframe, liveStocks);
+    const upsertMs = Date.now() - upsertStartedAt;
+    logEvent("INFO", "byma_cache_upsert_completed", {
+      requestId,
+      timeframe,
+      upsertedRows: liveStocks.length,
+      upsertMs,
+    });
+
+    logEvent("INFO", "byma_request_completed", {
+      requestId,
+      timeframe,
+      source: "live",
+      durationMs: Date.now() - requestStartedAt,
+      returnedRows: liveStocks.length,
+    });
 
     return toResponse(200, {
       source: "live",
       timeframe,
       stocks: liveStocks,
+      requestId,
     });
   } catch (error) {
-    console.error("Live fetch failed. Falling back to cache.", error);
+    logEvent("ERROR", "byma_live_fetch_failed", {
+      requestId,
+      timeframe,
+      cacheRows: cachedRows.length,
+      error: toErrorDetails(error),
+    });
 
     if (cachedRows.length > 0) {
+      logEvent("WARN", "byma_cache_fallback_used", {
+        requestId,
+        timeframe,
+        source: "cache_fallback",
+        durationMs: Date.now() - requestStartedAt,
+      });
       return toResponse(200, {
         source: "cache_fallback",
         stale: true,
         timeframe,
         stocks: mapCacheRowsToStocks(cachedRows),
+        requestId,
       });
     }
 
+    logEvent("ERROR", "byma_request_failed_no_cache", {
+      requestId,
+      timeframe,
+      durationMs: Date.now() - requestStartedAt,
+    });
     return toResponse(502, {
       error: "Unable to fetch Argentina market data and no cache is available.",
+      requestId,
     });
   }
 });
