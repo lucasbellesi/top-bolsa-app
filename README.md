@@ -11,6 +11,7 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 - Currency switch: `ARS` or `USD`
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
+- Tap any stock to open a dedicated detail screen
 - Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure
 - Production-safe fallback: no simulated prices when live/cache data is unavailable
 

@@ -1,7 +1,7 @@
 import YahooFinance from "npm:yahoo-finance2@3.13.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
-type TimeframeType = "1H" | "1D" | "1W" | "1M" | "YTD";
+type TimeframeType = "1H" | "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "YTD";
 
 interface SparklinePoint {
   timestamp: number;
@@ -59,7 +59,7 @@ const BYMA_TICKERS = [
   "BMA",
 ] as const;
 
-const VALID_TIMEFRAMES: ReadonlySet<TimeframeType> = new Set(["1H", "1D", "1W", "1M", "YTD"]);
+const VALID_TIMEFRAMES: ReadonlySet<TimeframeType> = new Set(["1H", "1D", "1W", "1M", "3M", "6M", "1Y", "YTD"]);
 const CACHE_TTL_SECONDS = Number(Deno.env.get("ARGENTINA_CACHE_TTL_SECONDS") ?? "300");
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -134,6 +134,18 @@ const parseTimeframe = (value: unknown): TimeframeType => {
   return "1D";
 };
 
+const parseTicker = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const isSupportedTicker = (ticker: string): boolean =>
+  BYMA_TICKERS.includes(ticker as (typeof BYMA_TICKERS)[number]);
+
 const timeframeToStartDate = (timeframe: TimeframeType): Date => {
   const now = new Date();
 
@@ -155,7 +167,22 @@ const timeframeToStartDate = (timeframe: TimeframeType): Date => {
     }
     case "1M": {
       const d = new Date(now);
+      d.setMonth(d.getMonth() - 1);
+      return d;
+    }
+    case "3M": {
+      const d = new Date(now);
       d.setMonth(d.getMonth() - 3);
+      return d;
+    }
+    case "6M": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 6);
+      return d;
+    }
+    case "1Y": {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 1);
       return d;
     }
     case "YTD":
@@ -168,7 +195,7 @@ const timeframeToInterval = (timeframe: TimeframeType): "5m" | "1d" | "1wk" => {
     return "5m";
   }
 
-  return timeframe === "YTD" ? "1wk" : "1d";
+  return timeframe === "YTD" || timeframe === "1Y" ? "1wk" : "1d";
 };
 
 const normalizedSparkline = (
@@ -230,7 +257,7 @@ const computePercentFromOneHourWindow = (
   return ((currentPrice - baseline.close) / baseline.close) * 100;
 };
 
-const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[]): StockData[] =>
+const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[], maxRows: number = 10): StockData[] =>
   rows
     .map((row) => ({
       id: row.ticker,
@@ -242,15 +269,22 @@ const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[]): StockData[] =>
     }))
     .filter((row) => Number.isFinite(row.price) && Number.isFinite(row.percentChange))
     .sort((a, b) => b.percentChange - a.percentChange)
-    .slice(0, 10);
+    .slice(0, maxRows);
 
-const readCache = async (timeframe: TimeframeType): Promise<ArgentinaCacheRow[]> => {
-  const { data, error } = await supabase
+const readCache = async (timeframe: TimeframeType, ticker: string | null): Promise<ArgentinaCacheRow[]> => {
+  let query = supabase
     .from("argentina_market_cache")
     .select("ticker,timeframe,market,price,percent_change,sparkline,cached_at")
     .eq("timeframe", timeframe)
-    .order("percent_change", { ascending: false })
-    .limit(10);
+    .order("percent_change", { ascending: false });
+
+  if (ticker) {
+    query = query.eq("ticker", ticker).limit(1);
+  } else {
+    query = query.limit(10);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Cache read error", error);
@@ -260,8 +294,8 @@ const readCache = async (timeframe: TimeframeType): Promise<ArgentinaCacheRow[]>
   return (data ?? []) as ArgentinaCacheRow[];
 };
 
-const isFreshCache = (rows: ArgentinaCacheRow[]): boolean => {
-  if (rows.length < 5) {
+const isFreshCache = (rows: ArgentinaCacheRow[], minRows: number): boolean => {
+  if (rows.length < minRows) {
     return false;
   }
 
@@ -345,14 +379,15 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
 
 const fetchLiveStocks = async (
   timeframe: TimeframeType,
+  tickers: readonly string[],
 ): Promise<{ stocks: StockData[]; traces: TickerFetchTrace[] }> => {
-  const results = await Promise.all(BYMA_TICKERS.map((ticker) => fetchTicker(ticker, timeframe)));
+  const results = await Promise.all(tickers.map((ticker) => fetchTicker(ticker, timeframe)));
 
   const stocks = results
     .map((result) => result.stock)
     .filter((stock): stock is StockData => stock !== null)
     .sort((a, b) => b.percentChange - a.percentChange)
-    .slice(0, 10);
+    .slice(0, tickers.length === 1 ? 1 : 10);
 
   return {
     stocks,
@@ -407,19 +442,31 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const timeframe = parseTimeframe((body as Record<string, unknown>).timeframe);
+  const requestedTicker = parseTicker((body as Record<string, unknown>).ticker);
+  if (requestedTicker && !isSupportedTicker(requestedTicker)) {
+    logEvent("WARN", "byma_request_invalid_ticker", {
+      requestId,
+      timeframe,
+      ticker: requestedTicker,
+    });
+    return toResponse(400, { error: `Unsupported ticker: ${requestedTicker}` });
+  }
+  const requestedTickers = requestedTicker ? [requestedTicker] : [...BYMA_TICKERS];
   logEvent("INFO", "byma_request_started", {
     requestId,
     timeframe,
+    ticker: requestedTicker,
     cacheTtlSeconds: CACHE_TTL_SECONDS,
   });
 
   const cacheReadStartedAt = Date.now();
-  const cachedRows = await readCache(timeframe);
+  const cachedRows = await readCache(timeframe, requestedTicker);
   const cacheReadMs = Date.now() - cacheReadStartedAt;
-  const freshCache = isFreshCache(cachedRows);
+  const freshCache = isFreshCache(cachedRows, requestedTicker ? 1 : 5);
   logEvent("INFO", "byma_cache_read", {
     requestId,
     timeframe,
+    ticker: requestedTicker,
     cacheRows: cachedRows.length,
     cacheReadMs,
     freshCache,
@@ -429,27 +476,28 @@ Deno.serve(async (req) => {
     logEvent("INFO", "byma_request_completed", {
       requestId,
       timeframe,
+      ticker: requestedTicker,
       source: "cache",
       durationMs: Date.now() - requestStartedAt,
     });
     return toResponse(200, {
       source: "cache",
       timeframe,
-      stocks: mapCacheRowsToStocks(cachedRows),
+      stocks: mapCacheRowsToStocks(cachedRows, requestedTicker ? 1 : 10),
       requestId,
     });
   }
 
   try {
     const liveFetchStartedAt = Date.now();
-    const { stocks: liveStocks, traces } = await fetchLiveStocks(timeframe);
+    const { stocks: liveStocks, traces } = await fetchLiveStocks(timeframe, requestedTickers);
     const liveFetchMs = Date.now() - liveFetchStartedAt;
 
     const failedTraces = traces.filter((trace) => !trace.ok);
     logEvent("INFO", "byma_live_fetch_summary", {
       requestId,
       timeframe,
-      requestedTickers: BYMA_TICKERS.length,
+      requestedTickers: requestedTickers.length,
       successCount: traces.length - failedTraces.length,
       failureCount: failedTraces.length,
       avgTickerDurationMs: average(traces.map((trace) => trace.durationMs)),
@@ -470,6 +518,7 @@ Deno.serve(async (req) => {
     logEvent("INFO", "byma_cache_upsert_completed", {
       requestId,
       timeframe,
+      ticker: requestedTicker,
       upsertedRows: liveStocks.length,
       upsertMs,
     });
@@ -477,6 +526,7 @@ Deno.serve(async (req) => {
     logEvent("INFO", "byma_request_completed", {
       requestId,
       timeframe,
+      ticker: requestedTicker,
       source: "live",
       durationMs: Date.now() - requestStartedAt,
       returnedRows: liveStocks.length,
@@ -492,6 +542,7 @@ Deno.serve(async (req) => {
     logEvent("ERROR", "byma_live_fetch_failed", {
       requestId,
       timeframe,
+      ticker: requestedTicker,
       cacheRows: cachedRows.length,
       error: toErrorDetails(error),
     });
@@ -500,6 +551,7 @@ Deno.serve(async (req) => {
       logEvent("WARN", "byma_cache_fallback_used", {
         requestId,
         timeframe,
+        ticker: requestedTicker,
         source: "cache_fallback",
         durationMs: Date.now() - requestStartedAt,
       });
@@ -507,7 +559,7 @@ Deno.serve(async (req) => {
         source: "cache_fallback",
         stale: true,
         timeframe,
-        stocks: mapCacheRowsToStocks(cachedRows),
+        stocks: mapCacheRowsToStocks(cachedRows, requestedTicker ? 1 : 10),
         requestId,
       });
     }
@@ -515,6 +567,7 @@ Deno.serve(async (req) => {
     logEvent("ERROR", "byma_request_failed_no_cache", {
       requestId,
       timeframe,
+      ticker: requestedTicker,
       durationMs: Date.now() - requestStartedAt,
     });
     return toResponse(502, {

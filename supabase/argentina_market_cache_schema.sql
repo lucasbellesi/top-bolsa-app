@@ -2,7 +2,7 @@
 create table if not exists public.argentina_market_cache (
   ticker text not null,
   ticker_yahoo text not null,
-  timeframe text not null check (timeframe in ('1H', '1D', '1W', '1M', 'YTD')),
+  timeframe text not null check (timeframe in ('1H', '1D', '1W', '1M', '3M', '6M', '1Y', 'YTD')),
   market text not null default 'AR' check (market = 'AR'),
   price numeric not null,
   percent_change numeric not null,

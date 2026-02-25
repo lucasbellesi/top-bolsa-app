@@ -1,16 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStockRanking } from '../hooks/useStockRanking';
-import { CurrencyType, DataSourceType, MarketType, TimeframeType } from '../types';
+import { CurrencyType, DataSourceType, DetailRangeType, MarketType, TimeframeType } from '../types';
 import { MarketTabs } from '../components/MarketTabs';
 import { TimeFilters } from '../components/TimeFilters';
 import { CurrencyToggle } from '../components/CurrencyToggle';
 import { StockListItem } from '../components/StockListItem';
 import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
+import { RootStackParamList } from '../navigation/types';
+
+const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType => {
+    switch (timeframe) {
+        case '1H':
+        case '1D':
+        case '1W':
+        case '1M':
+        case 'YTD':
+            return timeframe;
+        default:
+            return '1D';
+    }
+};
 
 export const HomeScreen = () => {
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Home'>>();
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
     const [currency, setCurrency] = useState<CurrencyType>('ARS');
@@ -119,6 +136,15 @@ export const HomeScreen = () => {
                                 stock={item}
                                 index={index}
                                 currency={effectiveCurrency}
+                                onPress={() =>
+                                    navigation.navigate('StockDetail', {
+                                        ticker: item.ticker,
+                                        market: item.market,
+                                        currency: effectiveCurrency,
+                                        initialRange: mapTimeframeToDetailRange(timeframe),
+                                        source,
+                                    })
+                                }
                             />
                         )}
                         showsVerticalScrollIndicator={false}

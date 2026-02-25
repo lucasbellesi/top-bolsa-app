@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { CurrencyType, StockData } from '../types';
 import { LineChart } from 'react-native-wagmi-charts';
 import { TrendingUp, TrendingDown } from 'lucide-react-native';
@@ -8,9 +8,10 @@ interface StockListItemProps {
     stock: StockData;
     index: number;
     currency: CurrencyType;
+    onPress?: () => void;
 }
 
-export const StockListItem = ({ stock, index, currency }: StockListItemProps) => {
+export const StockListItem = ({ stock, index, currency, onPress }: StockListItemProps) => {
     const isPositive = stock.percentChange >= 0;
     const color = isPositive ? '#10b981' : '#ef4444'; // emerald-500 : red-500
     const formattedPrice = new Intl.NumberFormat(currency === 'ARS' ? 'es-AR' : 'en-US', {
@@ -21,7 +22,12 @@ export const StockListItem = ({ stock, index, currency }: StockListItemProps) =>
     }).format(stock.price);
 
     return (
-        <View className="flex-row items-center justify-between p-4 mb-3 mx-4 bg-neutral-900 rounded-2xl border border-neutral-800">
+        <TouchableOpacity
+            disabled={!onPress}
+            onPress={onPress}
+            activeOpacity={0.85}
+            className="flex-row items-center justify-between p-4 mb-3 mx-4 bg-neutral-900 rounded-2xl border border-neutral-800"
+        >
 
             {/* Rank & Ticker */}
             <View className="flex-row items-center w-1/4">
@@ -64,6 +70,6 @@ export const StockListItem = ({ stock, index, currency }: StockListItemProps) =>
                     </Text>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 };
