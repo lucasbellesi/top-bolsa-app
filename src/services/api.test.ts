@@ -69,7 +69,38 @@ describe('fetchARMarketGainers', () => {
     expect(result.source).toBe('LIVE');
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('EDN');
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'fetch-argentina-market',
+      { body: { timeframe: '1D' } },
+    );
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('sends 1H timeframe to edge function when requested', async () => {
+    mockInvoke.mockResolvedValue({
+      data: {
+        source: 'live',
+        stocks: [
+          {
+            id: 'GGAL',
+            ticker: 'GGAL',
+            market: 'AR',
+            price: 4520,
+            percentChange: 0.84,
+            sparkline: [],
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const result = await fetchARMarketGainers('1H');
+
+    expect(result.source).toBe('LIVE');
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'fetch-argentina-market',
+      { body: { timeframe: '1H' } },
+    );
   });
 
   it('returns CACHE when edge function responds with cache_fallback', async () => {

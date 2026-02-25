@@ -7,7 +7,7 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 ## Features
 
 - Market switch: `US` and `AR (BYMA)`
-- Timeframe filters: `1D`, `1W`, `1M`, `YTD`
+- Timeframe filters: `1H`, `1D`, `1W`, `1M`, `YTD`
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
 - Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure
@@ -93,6 +93,7 @@ select public.warm_argentina_market_cache();
 ```
 
 The migration `20260225020407_schedule_argentina_cache_warmup.sql` schedules cron job `warm-argentina-market-cache` every 5 minutes.
+The migration `20260225213000_add_1h_timeframe_support.sql` adds `1H` support in cache + warm-up.
 
 ## Run
 

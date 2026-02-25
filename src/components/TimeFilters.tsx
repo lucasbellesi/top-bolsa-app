@@ -8,7 +8,7 @@ interface TimeFiltersProps {
 }
 
 export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => {
-    const timeframes: TimeframeType[] = ['1D', '1W', '1M', 'YTD'];
+    const timeframes: TimeframeType[] = ['1H', '1D', '1W', '1M', 'YTD'];
     return (
         <View className="flex-row justify-between px-4 mb-4 gap-x-2">
             {timeframes.map((tf) => {

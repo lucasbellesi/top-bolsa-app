@@ -1,7 +1,7 @@
 import YahooFinance from "npm:yahoo-finance2@3.13.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
-type TimeframeType = "1D" | "1W" | "1M" | "YTD";
+type TimeframeType = "1H" | "1D" | "1W" | "1M" | "YTD";
 
 interface SparklinePoint {
   timestamp: number;
@@ -59,7 +59,7 @@ const BYMA_TICKERS = [
   "BMA",
 ] as const;
 
-const VALID_TIMEFRAMES: ReadonlySet<TimeframeType> = new Set(["1D", "1W", "1M", "YTD"]);
+const VALID_TIMEFRAMES: ReadonlySet<TimeframeType> = new Set(["1H", "1D", "1W", "1M", "YTD"]);
 const CACHE_TTL_SECONDS = Number(Deno.env.get("ARGENTINA_CACHE_TTL_SECONDS") ?? "300");
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -138,6 +138,11 @@ const timeframeToStartDate = (timeframe: TimeframeType): Date => {
   const now = new Date();
 
   switch (timeframe) {
+    case "1H": {
+      const d = new Date(now);
+      d.setHours(d.getHours() - 2);
+      return d;
+    }
     case "1D": {
       const d = new Date(now);
       d.setDate(d.getDate() - 7);
@@ -158,8 +163,13 @@ const timeframeToStartDate = (timeframe: TimeframeType): Date => {
   }
 };
 
-const timeframeToInterval = (timeframe: TimeframeType): "1d" | "1wk" =>
-  timeframe === "YTD" ? "1wk" : "1d";
+const timeframeToInterval = (timeframe: TimeframeType): "5m" | "1d" | "1wk" => {
+  if (timeframe === "1H") {
+    return "5m";
+  }
+
+  return timeframe === "YTD" ? "1wk" : "1d";
+};
 
 const normalizedSparkline = (
   historicalRows: Array<{ date?: Date; close?: number }>,
@@ -193,6 +203,31 @@ const computePercentFromHistory = (
   }
 
   return ((currentPrice - firstValid.close) / firstValid.close) * 100;
+};
+
+const computePercentFromOneHourWindow = (
+  historicalRows: Array<{ close?: number; date?: Date }>,
+  currentPrice: number,
+): number => {
+  const points = historicalRows
+    .filter((row) => row.date instanceof Date && isFiniteNumber(row.close) && row.close > 0)
+    .map((row) => ({ ts: (row.date as Date).getTime(), close: row.close as number }))
+    .sort((a, b) => a.ts - b.ts);
+
+  if (points.length === 0) {
+    return 0;
+  }
+
+  const latestTs = points[points.length - 1].ts;
+  const oneHourAgoTs = latestTs - 60 * 60 * 1000;
+  const baseline =
+    [...points].reverse().find((point) => point.ts <= oneHourAgoTs) ?? points[0];
+
+  if (!isFiniteNumber(baseline.close) || baseline.close <= 0) {
+    return 0;
+  }
+
+  return ((currentPrice - baseline.close) / baseline.close) * 100;
 };
 
 const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[]): StockData[] =>
@@ -276,6 +311,8 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
 
     const percentChange = timeframe === "1D" && isFiniteNumber(quote.regularMarketChangePercent)
       ? quote.regularMarketChangePercent
+      : timeframe === "1H"
+      ? computePercentFromOneHourWindow(historical, priceCandidate)
       : computePercentFromHistory(historical, priceCandidate);
 
     return {
