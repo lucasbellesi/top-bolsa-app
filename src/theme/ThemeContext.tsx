@@ -1,10 +1,20 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useColorScheme } from 'react-native';
+import { getThemeTokens, ResolvedThemeMode, ThemeTokens } from './tokens';
+import { resolveThemeMode } from './resolveThemeMode';
+import { ThemeMode } from './ThemeMode';
 
-export type ThemeMode = 'dark' | 'light';
+const THEME_STORAGE_KEY = '@app/theme_mode';
+
+const isValidThemeMode = (value: string): value is ThemeMode =>
+    value === 'dark' || value === 'light' || value === 'system';
 
 interface ThemeContextValue {
     mode: ThemeMode;
+    resolvedMode: ResolvedThemeMode;
     isDark: boolean;
+    tokens: ThemeTokens;
     setMode: (mode: ThemeMode) => void;
     toggleMode: () => void;
 }
@@ -12,14 +22,46 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
-    const [mode, setMode] = useState<ThemeMode>('dark');
+    const [mode, setModeState] = useState<ThemeMode>('dark');
+    const systemColorScheme = useColorScheme();
+    const resolvedMode = resolveThemeMode(mode, systemColorScheme);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const restoreTheme = async () => {
+            try {
+                const storedMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+                if (isMounted && storedMode && isValidThemeMode(storedMode)) {
+                    setModeState(storedMode);
+                }
+            } catch {
+                // Ignore storage errors and keep default mode.
+            }
+        };
+
+        restoreTheme();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const setMode = useCallback((nextMode: ThemeMode) => {
+        setModeState(nextMode);
+        AsyncStorage.setItem(THEME_STORAGE_KEY, nextMode).catch(() => {
+            // Ignore storage errors and keep in-memory preference.
+        });
+    }, []);
 
     const value = useMemo<ThemeContextValue>(() => ({
         mode,
-        isDark: mode === 'dark',
+        resolvedMode,
+        isDark: resolvedMode === 'dark',
+        tokens: getThemeTokens(resolvedMode),
         setMode,
-        toggleMode: () => setMode((prev) => (prev === 'dark' ? 'light' : 'dark')),
-    }), [mode]);
+        toggleMode: () => setMode(resolvedMode === 'dark' ? 'light' : 'dark'),
+    }), [mode, resolvedMode, setMode]);
 
     return (
         <ThemeContext.Provider value={value}>

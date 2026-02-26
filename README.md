@@ -9,10 +9,12 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 - Market switch: `US` and `AR (BYMA)`
 - Timeframe filters: `1H`, `1D`, `1W`, `1M`, `YTD`
 - Currency switch: `ARS` or `USD`
-- Theme switch: `dark` or `light`
+- Theme switch: `dark`, `light`, or `system` (persisted)
 - Top 10 ranking by percentage change
 - Sparkline chart per ticker
 - Tap any stock to open a dedicated detail screen
+- Data freshness messaging (live/cache/delayed) and non-blocking update indicators
+- Skeleton loading states for Home and Detail screens
 - Supabase-backed cache for Argentina to reduce Yahoo rate-limit exposure
 - Production-safe fallback: no simulated prices when live/cache data is unavailable
 

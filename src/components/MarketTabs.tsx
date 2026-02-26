@@ -1,30 +1,56 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { MarketType } from '../types';
 import { useAppTheme } from '../theme/ThemeContext';
+import { triggerSelectionHaptic } from '../utils/feedback';
 
 interface MarketTabsProps {
     activeMarket: MarketType;
     onSelect: (market: MarketType) => void;
+    compact?: boolean;
 }
 
-export const MarketTabs = ({ activeMarket, onSelect }: MarketTabsProps) => {
-    const { isDark } = useAppTheme();
+export const MarketTabs = ({ activeMarket, onSelect, compact = false }: MarketTabsProps) => {
+    const { tokens } = useAppTheme();
 
     return (
-        <View className={`flex-row p-1 rounded-xl mx-4 my-2 mb-4 ${isDark ? 'bg-neutral-900' : 'bg-slate-100 border border-slate-200'}`}>
+        <View
+            className={`flex-row p-1 ${compact ? 'rounded-xl flex-1' : 'rounded-2xl mx-4 mb-3'}`}
+            style={{ backgroundColor: tokens.bgElevated, borderColor: tokens.borderSubtle, borderWidth: 1 }}
+        >
             {(['AR', 'US'] as MarketType[]).map((market) => {
                 const isActive = activeMarket === market;
                 return (
-                    <TouchableOpacity
+                    <Pressable
                         key={market}
-                        onPress={() => onSelect(market)}
-                        className={`flex-1 py-3 items-center rounded-lg ${isActive ? (isDark ? 'bg-neutral-700' : 'bg-white border border-slate-200') : 'bg-transparent'}`}
+                        onPress={async () => {
+                            if (activeMarket === market) {
+                                return;
+                            }
+
+                            await triggerSelectionHaptic();
+                            onSelect(market);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Switch market to ${market === 'AR' ? 'Argentina BYMA' : 'US Wall Street'}`}
+                        accessibilityState={{ selected: isActive }}
+                        android_ripple={{ color: `${tokens.accent}33`, borderless: false }}
+                        hitSlop={8}
+                        className="flex-1 h-12 items-center justify-center rounded-xl"
+                        style={{
+                            backgroundColor: isActive ? tokens.bgSurface : 'transparent',
+                            borderWidth: isActive ? 1 : 0,
+                            borderColor: tokens.borderSubtle,
+                        }}
                     >
-                        <Text className={`font-semibold text-base ${isActive ? (isDark ? 'text-white' : 'text-slate-900') : (isDark ? 'text-neutral-500' : 'text-slate-500')}`}>
+                        <Text
+                            className={`font-semibold ${compact ? 'text-sm' : 'text-base'}`}
+                            style={{ color: isActive ? tokens.textPrimary : tokens.textMuted }}
+                            numberOfLines={1}
+                        >
                             {market === 'AR' ? 'Argentina (BYMA)' : 'Wall Street (US)'}
                         </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                 );
             })}
         </View>

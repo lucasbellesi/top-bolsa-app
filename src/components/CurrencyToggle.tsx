@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { LayoutAnimation, Pressable, Text, View } from 'react-native';
 import { CurrencyType } from '../types';
 import { useAppTheme } from '../theme/ThemeContext';
+import { triggerSelectionHaptic } from '../utils/feedback';
 
 interface CurrencyToggleProps {
     activeCurrency: CurrencyType;
@@ -9,23 +10,47 @@ interface CurrencyToggleProps {
 }
 
 export const CurrencyToggle = ({ activeCurrency, onSelect }: CurrencyToggleProps) => {
-    const { isDark } = useAppTheme();
+    const { tokens } = useAppTheme();
     const currencies: CurrencyType[] = ['ARS', 'USD'];
 
     return (
-        <View className="flex-row justify-between px-4 mb-4 gap-x-2">
+        <View
+            className="flex-row mx-4 mb-3 p-1 rounded-2xl"
+            style={{ backgroundColor: tokens.bgElevated, borderColor: tokens.borderSubtle, borderWidth: 1 }}
+        >
             {currencies.map((currency) => {
                 const isActive = activeCurrency === currency;
                 return (
-                    <TouchableOpacity
+                    <Pressable
                         key={currency}
-                        onPress={() => onSelect(currency)}
-                        className={`flex-1 items-center py-2 rounded-full ${isActive ? 'bg-cyan-600' : isDark ? 'bg-neutral-800' : 'bg-slate-200'}`}
+                        onPress={async () => {
+                            if (activeCurrency === currency) {
+                                return;
+                            }
+
+                            LayoutAnimation.configureNext({
+                                duration: 160,
+                                update: { type: LayoutAnimation.Types.easeInEaseOut },
+                                create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                            });
+                            await triggerSelectionHaptic();
+                            onSelect(currency);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Switch currency to ${currency}`}
+                        accessibilityState={{ selected: isActive }}
+                        android_ripple={{ color: `${tokens.accent}33`, borderless: false }}
+                        hitSlop={8}
+                        className="flex-1 h-12 items-center justify-center rounded-xl"
+                        style={{
+                            backgroundColor: isActive ? tokens.accent : 'transparent',
+                        }}
                     >
-                        <Text className={`font-medium ${isActive ? 'text-white' : isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
+                        <Text className="font-semibold text-base" style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}>
                             {currency}
                         </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                 );
             })}
         </View>

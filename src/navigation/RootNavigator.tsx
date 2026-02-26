@@ -8,16 +8,16 @@ import { useAppTheme } from '../theme/ThemeContext';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator = () => {
-    const { isDark } = useAppTheme();
+    const { tokens } = useAppTheme();
 
     return (
         <Stack.Navigator
             initialRouteName="Home"
             screenOptions={{
-                headerStyle: { backgroundColor: isDark ? '#000000' : '#ffffff' },
-                headerTintColor: isDark ? '#ffffff' : '#0f172a',
-                headerTitleStyle: { color: isDark ? '#ffffff' : '#0f172a' },
-                contentStyle: { backgroundColor: isDark ? '#000000' : '#f8fafc' },
+                headerStyle: { backgroundColor: tokens.bgSurface },
+                headerTintColor: tokens.textPrimary,
+                headerTitleStyle: { color: tokens.textPrimary },
+                contentStyle: { backgroundColor: tokens.bgPrimary },
             }}
         >
             <Stack.Screen

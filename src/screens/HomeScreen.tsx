@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StatusBar, TouchableOpacity } from 'react-native';
+import {
+    AccessibilityInfo,
+    FlatList,
+    Pressable,
+    StatusBar,
+    Text,
+    View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +21,10 @@ import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
 import { RootStackParamList } from '../navigation/types';
 import { useAppTheme } from '../theme/ThemeContext';
+import { mapSourceToFreshness, getSourceHint } from '../utils/freshness';
+import { formatClockTime } from '../utils/format';
+import { StockListSkeleton } from '../components/StockListSkeleton';
+import { appTypography } from '../theme/typography';
 
 const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType => {
     switch (timeframe) {
@@ -29,15 +40,26 @@ const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType =>
 };
 
 export const HomeScreen = () => {
-    const { isDark } = useAppTheme();
+    const { tokens, isDark } = useAppTheme();
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Home'>>();
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
     const [currency, setCurrency] = useState<CurrencyType>('ARS');
 
-    const { data: rankingData, isLoading, isError, refetch } = useStockRanking(market, timeframe);
+    const {
+        data: rankingData,
+        isLoading,
+        isError,
+        isFetching,
+        refetch,
+        dataUpdatedAt,
+    } = useStockRanking(market, timeframe);
+
     const stocks = rankingData?.stocks ?? [];
-    const source = rankingData?.source;
+    const source: DataSourceType = rankingData?.source ?? 'UNAVAILABLE';
+    const freshness = mapSourceToFreshness(source, rankingData?.stale);
+    const sourceHint = getSourceHint(source, rankingData?.stale);
+
     const nativeCurrency = getNativeCurrencyForMarket(market);
     const needsFxConversion = currency !== nativeCurrency;
     const { data: usdToArsRate, isLoading: isFxLoading } = useUsdArsRate(needsFxConversion);
@@ -61,103 +83,162 @@ export const HomeScreen = () => {
         }));
     }, [stocks, conversionFactor]);
 
-    const sourceBadgeClasses: Record<DataSourceType, string> = {
-        LIVE: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400',
-        CACHE: 'bg-amber-500/20 border-amber-500/40 text-amber-400',
-        MOCK: 'bg-neutral-600/20 border-neutral-500/40 text-neutral-300',
-        UNAVAILABLE: 'bg-rose-500/20 border-rose-500/40 text-rose-400',
+    const sourceBadgeStyle: Record<DataSourceType, { bg: string; border: string; text: string }> = {
+        LIVE: { bg: `${tokens.positive}26`, border: `${tokens.positive}66`, text: tokens.positive },
+        CACHE: { bg: `${tokens.warning}26`, border: `${tokens.warning}66`, text: tokens.warning },
+        MOCK: { bg: `${tokens.textMuted}26`, border: `${tokens.textMuted}66`, text: tokens.textSecondary },
+        UNAVAILABLE: { bg: `${tokens.negative}26`, border: `${tokens.negative}66`, text: tokens.negative },
+    };
+
+    const handleMarketSelect = (nextMarket: MarketType) => {
+        setMarket(nextMarket);
+        AccessibilityInfo.announceForAccessibility(
+            `Market set to ${nextMarket === 'AR' ? 'Argentina BYMA' : 'US Wall Street'}`
+        );
+    };
+
+    const handleTimeframeSelect = (nextTimeframe: TimeframeType) => {
+        setTimeframe(nextTimeframe);
+        AccessibilityInfo.announceForAccessibility(`Timeframe set to ${nextTimeframe}`);
+    };
+
+    const handleCurrencySelect = (nextCurrency: CurrencyType) => {
+        setCurrency(nextCurrency);
+        AccessibilityInfo.announceForAccessibility(`Currency set to ${nextCurrency}`);
     };
 
     return (
-        <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
+        <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
+            <StatusBar
+                barStyle={isDark ? 'light-content' : 'dark-content'}
+                backgroundColor={tokens.bgPrimary}
+            />
 
-            <View className="px-4 pt-6 pb-4">
-                <Text className={`text-3xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Top Gainers</Text>
-                <Text className={`mt-1 ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Real-time market leaders</Text>
-                <Text className={`mt-1 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
-                    Informational use only. Not investment advice.
+            <View className="px-4 pt-4 pb-2">
+                <Text className="text-4xl font-extrabold tracking-tight" style={[appTypography.heading, { color: tokens.textPrimary }]}>
+                    Top Gainers
                 </Text>
-                {source ? (
-                    <View className="mt-3 self-start">
-                        <Text className={`text-xs font-bold px-2 py-1 rounded-md border ${sourceBadgeClasses[source]}`}>
-                            {source}
+                <Text className="mt-1 text-lg" style={{ color: tokens.textSecondary }}>
+                    Real-time market leaders
+                </Text>
+
+                <View className="mt-3 flex-row items-center flex-wrap gap-2">
+                    <View
+                        className="self-start px-2 py-1 rounded-md border"
+                        style={{
+                            backgroundColor: sourceBadgeStyle[source].bg,
+                            borderColor: sourceBadgeStyle[source].border,
+                        }}
+                    >
+                        <Text className="text-xs font-bold" style={{ color: sourceBadgeStyle[source].text }}>
+                            {source.toUpperCase()}
                         </Text>
                     </View>
-                ) : null}
+                    {dataUpdatedAt ? (
+                        <Text className="text-xs" style={{ color: tokens.textMuted }}>
+                            Last update: {formatClockTime(dataUpdatedAt)}
+                        </Text>
+                    ) : null}
+                    {isFetching && displayStocks.length > 0 ? (
+                        <Text className="text-xs font-medium" style={{ color: tokens.accent }}>
+                            Updating...
+                        </Text>
+                    ) : null}
+                </View>
+
+                <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
+                    {sourceHint}
+                </Text>
                 {source === 'MOCK' ? (
-                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
+                    <Text className="mt-1 text-xs" style={{ color: tokens.textMuted }}>
                         Demo mode: showing simulated prices.
                     </Text>
                 ) : null}
                 {showFxUnavailableWarning ? (
-                    <Text className="text-amber-400 mt-2 text-xs">
+                    <Text className="mt-1 text-xs" style={{ color: tokens.warning }}>
                         FX unavailable. Showing {nativeCurrency} values.
                     </Text>
                 ) : null}
                 {needsFxConversion && conversionFactor !== null && usdToArsRate ? (
-                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
+                    <Text className="mt-1 text-xs" style={{ color: tokens.textMuted }}>
                         FX USD/ARS: {usdToArsRate.toFixed(2)}
                     </Text>
                 ) : null}
             </View>
 
-            <MarketTabs activeMarket={market} onSelect={setMarket} />
-            <ThemeToggle />
-            <TimeFilters activeTimeframe={timeframe} onSelect={setTimeframe} />
-            <CurrencyToggle activeCurrency={currency} onSelect={setCurrency} />
+            <View className="px-4 flex-row gap-2 mb-3 items-start">
+                <MarketTabs compact activeMarket={market} onSelect={handleMarketSelect} />
+                <View style={{ width: 128 }}>
+                    <ThemeToggle variant="compact" />
+                </View>
+            </View>
 
-            {isLoadingWithFx ? (
-                <View className="flex-1 justify-center items-center">
-                    <ActivityIndicator size="large" color="#10b981" />
-                </View>
-            ) : isError ? (
-                <View className="flex-1 justify-center items-center">
-                    <Text className="text-red-500 font-bold mb-4">Failed to load data.</Text>
-                    <TouchableOpacity onPress={() => refetch()}>
-                        <Text className="text-emerald-500 font-semibold">Tap to retry</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                displayStocks.length === 0 ? (
-                    <View className="flex-1 justify-center items-center px-6">
-                        <Text className="text-amber-400 font-semibold text-center">
-                            Market data temporarily unavailable.
+            <CurrencyToggle activeCurrency={currency} onSelect={handleCurrencySelect} />
+            <TimeFilters activeTimeframe={timeframe} onSelect={handleTimeframeSelect} />
+
+            <View
+                className="mx-4 mb-3 rounded-xl border px-3 py-2"
+                style={{ backgroundColor: tokens.bgElevated, borderColor: tokens.borderSubtle }}
+            >
+                <Text className="text-xs" style={{ color: tokens.textMuted }}>
+                    Informational use only. Not investment advice.
+                </Text>
+            </View>
+
+            {displayStocks.length === 0 ? (
+                isLoadingWithFx ? (
+                    <StockListSkeleton rows={10} />
+                ) : isError ? (
+                    <View className="flex-1 justify-center items-center px-8">
+                        <Text className="font-bold mb-3 text-center" style={{ color: tokens.negative }}>
+                            Failed to load data.
                         </Text>
-                        <Text className={`mt-2 text-center ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
-                            Try again in a few minutes.
-                        </Text>
-                        <TouchableOpacity onPress={() => refetch()} className="mt-4">
-                            <Text className="text-emerald-500 font-semibold">Retry now</Text>
-                        </TouchableOpacity>
+                        <Pressable onPress={() => refetch()} hitSlop={8}>
+                            <Text className="font-semibold" style={{ color: tokens.accent }}>Tap to retry</Text>
+                        </Pressable>
                     </View>
                 ) : (
-                    <FlatList
-                        data={displayStocks}
-                        keyExtractor={(item) => item.id}
-                        renderItem={({ item, index }) => (
-                            <StockListItem
-                                stock={item}
-                                index={index}
-                                currency={effectiveCurrency}
-                                onPress={() =>
-                                    navigation.navigate('StockDetail', {
-                                        ticker: item.ticker,
-                                        market: item.market,
-                                        currency: effectiveCurrency,
-                                        initialRange: mapTimeframeToDetailRange(timeframe),
-                                        source,
-                                    })
-                                }
-                            />
-                        )}
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={{ paddingBottom: 40 }}
-                        // Ensure fast layout and no shifts:
-                        initialNumToRender={10}
-                        windowSize={5}
-                    />
+                    <View className="flex-1 justify-center items-center px-6">
+                        <Text className="font-semibold text-center" style={{ color: tokens.warning }}>
+                            Market data temporarily unavailable.
+                        </Text>
+                        <Text className="mt-2 text-center" style={{ color: tokens.textMuted }}>
+                            Try again in a few minutes.
+                        </Text>
+                        <Pressable onPress={() => refetch()} className="mt-4" hitSlop={8}>
+                            <Text className="font-semibold" style={{ color: tokens.accent }}>Retry now</Text>
+                        </Pressable>
+                    </View>
                 )
+            ) : (
+                <FlatList
+                    data={displayStocks}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item, index }) => (
+                        <StockListItem
+                            stock={item}
+                            index={index}
+                            currency={effectiveCurrency}
+                            freshness={freshness}
+                            lastUpdatedAt={dataUpdatedAt || undefined}
+                            onPress={() =>
+                                navigation.navigate('StockDetail', {
+                                    ticker: item.ticker,
+                                    market: item.market,
+                                    currency: effectiveCurrency,
+                                    initialRange: mapTimeframeToDetailRange(timeframe),
+                                    source,
+                                })
+                            }
+                        />
+                    )}
+                    refreshing={isFetching && !isLoadingWithFx}
+                    onRefresh={refetch}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 44 }}
+                    initialNumToRender={10}
+                    windowSize={5}
+                />
             )}
         </SafeAreaView>
     );

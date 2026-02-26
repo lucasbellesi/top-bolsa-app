@@ -1,5 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, StatusBar, Text, TouchableOpacity, View } from 'react-native';
+import {
+    ActivityIndicator,
+    AccessibilityInfo,
+    Dimensions,
+    Pressable,
+    StatusBar,
+    Text,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart } from 'react-native-wagmi-charts';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,18 +20,15 @@ import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '.
 import { DetailRangeFilters } from '../components/DetailRangeFilters';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAppTheme } from '../theme/ThemeContext';
+import { formatClockTime, formatCurrencyValue, formatPercent, formatRelativeTime } from '../utils/format';
+import { appTypography } from '../theme/typography';
+import { getSourceHint, mapSourceToFreshness } from '../utils/freshness';
+import { StockDetailSkeleton } from '../components/StockDetailSkeleton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StockDetail'>;
 
-const sourceBadgeClasses: Record<DataSourceType, string> = {
-    LIVE: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400',
-    CACHE: 'bg-amber-500/20 border-amber-500/40 text-amber-400',
-    MOCK: 'bg-neutral-600/20 border-neutral-500/40 text-neutral-300',
-    UNAVAILABLE: 'bg-rose-500/20 border-rose-500/40 text-rose-400',
-};
-
 export const StockDetailScreen = ({ route }: Props) => {
-    const { isDark } = useAppTheme();
+    const { isDark, tokens } = useAppTheme();
     const { ticker, market, currency, initialRange } = route.params;
     const [range, setRange] = useState<DetailRangeType>(initialRange);
 
@@ -34,7 +39,15 @@ export const StockDetailScreen = ({ route }: Props) => {
     const effectiveCurrency: CurrencyType = conversionFactor === null ? nativeCurrency : currency;
     const showFxUnavailableWarning = needsFxConversion && !isFxLoading && conversionFactor === null;
 
-    const { data, isLoading, isError, refetch } = useStockDetail(ticker, market, range, currency);
+    const {
+        data,
+        isLoading,
+        isError,
+        isFetching,
+        refetch,
+        dataUpdatedAt,
+    } = useStockDetail(ticker, market, range, currency);
+
     const isLoadingWithFx = isLoading || (needsFxConversion && isFxLoading && conversionFactor === null);
 
     const displayData = useMemo(() => {
@@ -56,95 +69,199 @@ export const StockDetailScreen = ({ route }: Props) => {
         };
     }, [data, conversionFactor]);
 
-    if (isLoadingWithFx) {
+    const source = displayData?.source ?? 'UNAVAILABLE';
+    const freshness = mapSourceToFreshness(source, source === 'CACHE');
+    const sourceHint = getSourceHint(source, source === 'CACHE');
+
+    const sourceBadgeStyle: Record<DataSourceType, { bg: string; border: string; text: string }> = {
+        LIVE: { bg: `${tokens.positive}26`, border: `${tokens.positive}66`, text: tokens.positive },
+        CACHE: { bg: `${tokens.warning}26`, border: `${tokens.warning}66`, text: tokens.warning },
+        MOCK: { bg: `${tokens.textMuted}26`, border: `${tokens.textMuted}66`, text: tokens.textSecondary },
+        UNAVAILABLE: { bg: `${tokens.negative}26`, border: `${tokens.negative}66`, text: tokens.negative },
+    };
+
+    const chartWidth = Math.max(280, Dimensions.get('window').width - 48);
+
+    if (isLoadingWithFx && !displayData) {
         return (
-            <SafeAreaView className={`flex-1 justify-center items-center ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
-                <ActivityIndicator size="large" color="#10b981" />
+            <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
+                <StockDetailSkeleton />
             </SafeAreaView>
         );
     }
 
     if (isError || !displayData) {
         return (
-            <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
-                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
+            <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={tokens.bgPrimary} />
                 <View className="flex-1 justify-center items-center px-8">
-                    <Text className="text-red-500 font-bold mb-4 text-center">
-                        Failed to load stock details.
+                    <Text className="font-bold mb-3 text-center" style={{ color: tokens.negative }}>
+                        Failed to load stock details for {range}.
                     </Text>
-                    <TouchableOpacity onPress={() => refetch()}>
-                        <Text className="text-emerald-500 font-semibold">Tap to retry</Text>
-                    </TouchableOpacity>
+                    <Pressable onPress={() => refetch()} hitSlop={8}>
+                        <Text className="font-semibold" style={{ color: tokens.accent }}>Tap to retry</Text>
+                    </Pressable>
                 </View>
             </SafeAreaView>
         );
     }
 
     const isPositive = displayData.percentChange >= 0;
-    const chartColor = isPositive ? '#10b981' : '#ef4444';
-    const formattedPrice = new Intl.NumberFormat(effectiveCurrency === 'ARS' ? 'es-AR' : 'en-US', {
-        style: 'currency',
-        currency: effectiveCurrency,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(displayData.price);
+    const chartColor = isPositive ? tokens.positive : tokens.negative;
+    const formattedPrice = formatCurrencyValue(displayData.price, effectiveCurrency);
+    const formattedPercent = formatPercent(displayData.percentChange);
 
-    const chartWidth = Math.max(280, Dimensions.get('window').width - 48);
-    const lastUpdatedText = new Date(displayData.lastUpdatedAt).toLocaleString();
+    const series = displayData.series;
+    const firstValue = series[0]?.value ?? displayData.price;
+    const absoluteChange = displayData.price - firstValue;
+    const formattedAbsoluteChange = `${absoluteChange >= 0 ? '+' : '-'}${formatCurrencyValue(
+        Math.abs(absoluteChange),
+        effectiveCurrency
+    )}`;
+
+    const minValue = series.length ? Math.min(...series.map((point) => point.value)) : displayData.price;
+    const maxValue = series.length ? Math.max(...series.map((point) => point.value)) : displayData.price;
+    const startValue = series[0]?.value ?? displayData.price;
+    const endValue = series[series.length - 1]?.value ?? displayData.price;
+
+    const updateTimestamp = dataUpdatedAt || new Date(displayData.lastUpdatedAt).getTime();
+    const handleRangeSelect = (nextRange: DetailRangeType) => {
+        setRange(nextRange);
+        AccessibilityInfo.announceForAccessibility(`Detail range set to ${nextRange}`);
+    };
 
     return (
-        <SafeAreaView className={`flex-1 ${isDark ? 'bg-black' : 'bg-slate-50'}`}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#000' : '#f8fafc'} />
+        <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={tokens.bgPrimary} />
 
             <View className="px-4 pt-4 pb-2">
-                <Text className={`text-3xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>{displayData.ticker}</Text>
-                <Text className={`mt-1 ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Market: {displayData.market}</Text>
-                <Text className={`mt-1 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>Last update: {lastUpdatedText}</Text>
-                <View className="mt-3 self-start">
-                    <Text className={`text-xs font-bold px-2 py-1 rounded-md border ${sourceBadgeClasses[displayData.source]}`}>
-                        {displayData.source}
-                    </Text>
+                <Text className="text-4xl font-extrabold tracking-tight" style={[appTypography.heading, { color: tokens.textPrimary }]}>
+                    {displayData.ticker}
+                </Text>
+                <Text className="mt-1 text-base" style={{ color: tokens.textSecondary }}>
+                    Market: {displayData.market} • {freshness}
+                </Text>
+                <Text className="mt-1 text-xs" style={{ color: tokens.textMuted }}>
+                    Updated {formatRelativeTime(updateTimestamp)} ({formatClockTime(updateTimestamp)})
+                </Text>
+
+                <View className="mt-3 flex-row items-center flex-wrap gap-2">
+                    <View
+                        className="self-start px-2 py-1 rounded-md border"
+                        style={{
+                            backgroundColor: sourceBadgeStyle[displayData.source].bg,
+                            borderColor: sourceBadgeStyle[displayData.source].border,
+                        }}
+                    >
+                        <Text className="text-xs font-bold" style={{ color: sourceBadgeStyle[displayData.source].text }}>
+                            {displayData.source}
+                        </Text>
+                    </View>
+                    {isFetching ? (
+                        <View className="flex-row items-center">
+                            <ActivityIndicator size="small" color={tokens.accent} />
+                            <Text className="ml-1 text-xs font-medium" style={{ color: tokens.accent }}>
+                                Updating...
+                            </Text>
+                        </View>
+                    ) : null}
                 </View>
+                <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
+                    {sourceHint}
+                </Text>
                 {showFxUnavailableWarning ? (
-                    <Text className="text-amber-400 mt-2 text-xs">
+                    <Text className="mt-2 text-xs" style={{ color: tokens.warning }}>
                         FX unavailable. Showing {nativeCurrency} values.
                     </Text>
                 ) : null}
                 {needsFxConversion && conversionFactor !== null && usdToArsRate ? (
-                    <Text className={`mt-2 text-xs ${isDark ? 'text-neutral-500' : 'text-slate-500'}`}>
+                    <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
                         FX USD/ARS: {usdToArsRate.toFixed(2)}
                     </Text>
                 ) : null}
             </View>
 
-            <ThemeToggle />
-            <DetailRangeFilters activeRange={range} onSelect={setRange} />
+            <View className="px-4 mb-3">
+                <ThemeToggle />
+            </View>
+            <DetailRangeFilters activeRange={range} onSelect={handleRangeSelect} />
 
-            <View className={`mx-4 p-4 rounded-2xl border ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-                <Text className={`text-sm ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>Current price</Text>
-                <Text className={`text-3xl font-bold mt-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>{formattedPrice}</Text>
-                <View className={`self-start flex-row items-center mt-3 px-2 py-1 rounded-md ${isPositive ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
-                    {isPositive ? (
-                        <TrendingUp color="#10b981" size={16} />
-                    ) : (
-                        <TrendingDown color="#ef4444" size={16} />
-                    )}
-                    <Text className={`ml-1 font-bold text-sm ${isPositive ? 'text-emerald-500' : 'text-red-500'}`}>
-                        {Math.abs(displayData.percentChange).toFixed(2)}%
+            <View
+                className="mx-4 p-4 rounded-2xl border"
+                style={{ backgroundColor: tokens.bgSurface, borderColor: tokens.borderSubtle }}
+            >
+                <Text className="text-sm" style={{ color: tokens.textMuted }}>Current price</Text>
+                <Text className="text-3xl font-bold mt-2" style={[appTypography.numbers, { color: tokens.textPrimary }]}>
+                    {formattedPrice}
+                </Text>
+
+                <View className="flex-row items-center justify-between mt-3">
+                    <View className="flex-row items-center px-2 py-1 rounded-md" style={{ backgroundColor: `${chartColor}24` }}>
+                        {isPositive ? (
+                            <TrendingUp color={chartColor} size={16} />
+                        ) : (
+                            <TrendingDown color={chartColor} size={16} />
+                        )}
+                        <Text className="ml-1 font-bold text-sm" style={[appTypography.numbers, { color: chartColor }]}>
+                            {formattedPercent}
+                        </Text>
+                    </View>
+
+                    <Text className="font-semibold text-sm" style={[appTypography.numbers, { color: chartColor }]}>
+                        {formattedAbsoluteChange}
                     </Text>
                 </View>
             </View>
 
-            <View className={`mx-4 mt-4 p-4 rounded-2xl border ${isDark ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-slate-200'}`}>
-                {displayData.series.length > 0 ? (
-                    <LineChart.Provider data={displayData.series}>
-                        <LineChart height={240} width={chartWidth}>
-                            <LineChart.Path color={chartColor} width={2} />
-                        </LineChart>
-                    </LineChart.Provider>
+            <View
+                className="mx-4 mt-4 p-4 rounded-2xl border"
+                style={{ backgroundColor: tokens.bgSurface, borderColor: tokens.borderSubtle }}
+            >
+                {series.length > 1 ? (
+                    <>
+                        <LineChart.Provider data={series}>
+                            <LineChart height={240} width={chartWidth}>
+                                <LineChart.Path color={chartColor} width={2} />
+                            </LineChart>
+                        </LineChart.Provider>
+
+                        <View className="mt-4 flex-row flex-wrap">
+                            <View className="w-1/2 mb-2">
+                                <Text className="text-xs" style={{ color: tokens.textMuted }}>Start</Text>
+                                <Text className="text-sm font-semibold" style={[appTypography.numbers, { color: tokens.textSecondary }]}>
+                                    {formatCurrencyValue(startValue, effectiveCurrency)}
+                                </Text>
+                            </View>
+                            <View className="w-1/2 mb-2 items-end">
+                                <Text className="text-xs" style={{ color: tokens.textMuted }}>End</Text>
+                                <Text className="text-sm font-semibold" style={[appTypography.numbers, { color: tokens.textSecondary }]}>
+                                    {formatCurrencyValue(endValue, effectiveCurrency)}
+                                </Text>
+                            </View>
+                            <View className="w-1/2">
+                                <Text className="text-xs" style={{ color: tokens.textMuted }}>Min</Text>
+                                <Text className="text-sm font-semibold" style={[appTypography.numbers, { color: tokens.textSecondary }]}>
+                                    {formatCurrencyValue(minValue, effectiveCurrency)}
+                                </Text>
+                            </View>
+                            <View className="w-1/2 items-end">
+                                <Text className="text-xs" style={{ color: tokens.textMuted }}>Max</Text>
+                                <Text className="text-sm font-semibold" style={[appTypography.numbers, { color: tokens.textSecondary }]}>
+                                    {formatCurrencyValue(maxValue, effectiveCurrency)}
+                                </Text>
+                            </View>
+                        </View>
+                    </>
                 ) : (
                     <View className="py-20 items-center">
-                        <Text className={isDark ? 'text-neutral-400' : 'text-slate-600'}>No chart data available.</Text>
+                        <Text style={{ color: tokens.textSecondary }}>
+                            No chart data available for {range}.
+                        </Text>
+                        <Pressable onPress={() => refetch()} className="mt-4" hitSlop={8}>
+                            <Text className="font-semibold" style={{ color: tokens.accent }}>
+                                Retry
+                            </Text>
+                        </Pressable>
                     </View>
                 )}
             </View>
