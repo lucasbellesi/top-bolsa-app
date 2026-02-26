@@ -6,7 +6,6 @@ import { TrendingDown, TrendingUp } from 'lucide-react-native';
 import { useAppTheme } from '../theme/ThemeContext';
 import { appTypography } from '../theme/typography';
 import { formatCurrencyValue, formatPercent } from '../utils/format';
-import { getFreshnessLabel } from '../utils/freshness';
 
 interface StockListItemProps {
     stock: StockData;
@@ -23,6 +22,7 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
     const color = isPositive ? tokens.positive : tokens.negative;
     const formattedPrice = formatCurrencyValue(stock.price, currency);
     const formattedChange = formatPercent(stock.percentChange);
+    const companyName = stock.companyName?.trim() || stock.ticker;
 
     const containerOpacity = useRef(new Animated.Value(0)).current;
     const translateY = useRef(new Animated.Value(10)).current;
@@ -63,8 +63,8 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
                 android_ripple={{ color: `${tokens.accent}22`, borderless: false }}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`Open details for ${stock.ticker}, ${formattedChange}${lastUpdatedAt ? `, updated at ${new Date(lastUpdatedAt).toLocaleTimeString()}` : ''}`}
-                className="h-24 px-4 flex-row items-center"
+                accessibilityLabel={`Open details for ${stock.ticker} (${companyName}), ${formattedChange}, ${freshness}${lastUpdatedAt ? `, updated at ${new Date(lastUpdatedAt).toLocaleTimeString()}` : ''}`}
+                className="h-28 px-4 flex-row items-center"
                 style={({ pressed }) => ({ opacity: pressed ? 0.94 : 1 })}
             >
                 <View className="w-8 items-start">
@@ -83,7 +83,10 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
                         {stock.ticker}
                     </Text>
                     <Text className="text-xs mt-1" style={{ color: tokens.textMuted }}>
-                        {stock.market} • {getFreshnessLabel(freshness)}
+                        {companyName}
+                    </Text>
+                    <Text className="text-xs mt-1" style={{ color: tokens.textMuted }}>
+                        {stock.market}
                     </Text>
                 </View>
 

@@ -166,9 +166,11 @@ export const StockDetailScreen = ({ route }: Props) => {
                         </View>
                     ) : null}
                 </View>
-                <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
-                    {sourceHint}
-                </Text>
+                {sourceHint ? (
+                    <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
+                        {sourceHint}
+                    </Text>
+                ) : null}
                 {showFxUnavailableWarning ? (
                     <Text className="mt-2 text-xs" style={{ color: tokens.warning }}>
                         FX unavailable. Showing {nativeCurrency} values.
@@ -182,7 +184,9 @@ export const StockDetailScreen = ({ route }: Props) => {
             </View>
 
             <View className="px-4 mb-3">
-                <ThemeToggle />
+                <View style={{ width: 96 }}>
+                    <ThemeToggle variant="compact" />
+                </View>
             </View>
             <DetailRangeFilters activeRange={range} onSelect={handleRangeSelect} />
 

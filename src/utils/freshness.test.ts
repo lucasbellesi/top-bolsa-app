@@ -19,6 +19,6 @@ describe('freshness utils', () => {
     it('returns human-readable labels and hints', () => {
         expect(getFreshnessLabel('fresh')).toBe('Fresh');
         expect(getFreshnessLabel('stale')).toBe('Cached');
-        expect(getSourceHint('CACHE')).toContain('retraso');
+        expect(getSourceHint('CACHE')).toBe('');
     });
 });

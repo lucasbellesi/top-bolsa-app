@@ -11,7 +11,7 @@ interface TimeFiltersProps {
 
 export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => {
     const { tokens } = useAppTheme();
-    const timeframes: TimeframeType[] = ['1H', '1D', '1W', '1M', 'YTD'];
+    const timeframes: TimeframeType[] = ['1H', '1D', '1W', '1M', '3M', 'YTD'];
 
     return (
         <View className="mb-3">

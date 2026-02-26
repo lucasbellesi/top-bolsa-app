@@ -32,7 +32,7 @@ export const getSourceHint = (source: DataSourceType, stale?: boolean): string =
     }
 
     if (source === 'CACHE' || stale) {
-        return 'Puede tener retraso';
+        return '';
     }
 
     if (source === 'MOCK') {

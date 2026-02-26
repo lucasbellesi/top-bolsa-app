@@ -12,7 +12,7 @@ vi.mock('./supabase', () => ({
   },
 }));
 
-import { fetchARMarketGainers } from './api';
+import { fetchARMarketGainers, fetchUSMarketGainers } from './api';
 
 const createCacheQueryChain = (result: unknown) => {
   const limit = vi.fn().mockResolvedValue(result);
@@ -200,5 +200,64 @@ describe('fetchARMarketGainers', () => {
 
     expect(result.source).toBe('MOCK');
     expect(result.stocks).toHaveLength(10);
+  });
+});
+
+describe('fetchUSMarketGainers (3M)', () => {
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).__DEV__ = false;
+    vi.restoreAllMocks();
+  });
+
+  it('calculates real 3M performance from daily series and sets companyName fallback', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'NVDA', price: '900', change_percentage: '2.1%' },
+              { ticker: 'AAPL', price: '200', change_percentage: '1.2%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_DAILY') && url.includes('symbol=NVDA')) {
+        return {
+          json: async () => ({
+            'Time Series (Daily)': {
+              '2026-02-26': { '4. close': '120.00' },
+              '2025-11-26': { '4. close': '100.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_DAILY') && url.includes('symbol=AAPL')) {
+        return {
+          json: async () => ({
+            'Time Series (Daily)': {
+              '2026-02-26': { '4. close': '110.00' },
+              '2025-11-26': { '4. close': '100.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('3M');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(2);
+    expect(result.stocks[0].ticker).toBe('NVDA');
+    expect(result.stocks[0].companyName).toBe('NVIDIA Corporation');
+    expect(result.stocks[0].percentChange).toBeCloseTo(20, 5);
+    expect(result.stocks[1].companyName).toBe('Apple Inc.');
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ interface SparklinePoint {
 interface StockData {
   id: string;
   ticker: string;
+  companyName?: string;
   market: "AR";
   price: number;
   percentChange: number;
@@ -21,6 +22,7 @@ interface ArgentinaCacheRow {
   ticker: string;
   timeframe: TimeframeType;
   market: "AR";
+  company_name: string | null;
   price: number;
   percent_change: number;
   sparkline: SparklinePoint[] | null;
@@ -262,6 +264,7 @@ const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[], maxRows: number = 10): 
     .map((row) => ({
       id: row.ticker,
       ticker: row.ticker,
+      companyName: row.company_name ?? row.ticker,
       market: "AR" as const,
       price: Number(row.price),
       percentChange: Number(row.percent_change),
@@ -274,7 +277,7 @@ const mapCacheRowsToStocks = (rows: ArgentinaCacheRow[], maxRows: number = 10): 
 const readCache = async (timeframe: TimeframeType, ticker: string | null): Promise<ArgentinaCacheRow[]> => {
   let query = supabase
     .from("argentina_market_cache")
-    .select("ticker,timeframe,market,price,percent_change,sparkline,cached_at")
+    .select("ticker,timeframe,market,company_name,price,percent_change,sparkline,cached_at")
     .eq("timeframe", timeframe)
     .order("percent_change", { ascending: false });
 
@@ -342,6 +345,12 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
     });
 
     const sparkline = normalizedSparkline(historical, priceCandidate);
+    const companyNameCandidate =
+      (typeof quote.longName === "string" && quote.longName.trim().length > 0
+        ? quote.longName
+        : typeof quote.shortName === "string" && quote.shortName.trim().length > 0
+          ? quote.shortName
+          : ticker).trim();
 
     const percentChange = timeframe === "1D" && isFiniteNumber(quote.regularMarketChangePercent)
       ? quote.regularMarketChangePercent
@@ -353,6 +362,7 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
       stock: {
         id: ticker,
         ticker,
+        companyName: companyNameCandidate,
         market: "AR",
         price: priceCandidate,
         percentChange,
@@ -403,6 +413,7 @@ const upsertCache = async (timeframe: TimeframeType, stocks: StockData[]): Promi
     ticker_yahoo: `${stock.ticker}.BA`,
     timeframe,
     market: "AR",
+    company_name: stock.companyName ?? stock.ticker,
     price: stock.price,
     percent_change: stock.percentChange,
     sparkline: stock.sparkline,

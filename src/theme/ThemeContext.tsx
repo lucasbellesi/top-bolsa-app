@@ -2,13 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { getThemeTokens, ResolvedThemeMode, ThemeTokens } from './tokens';
-import { resolveThemeMode } from './resolveThemeMode';
+import { PersistedThemeMode, resolveThemeMode } from './resolveThemeMode';
 import { ThemeMode } from './ThemeMode';
 
 const THEME_STORAGE_KEY = '@app/theme_mode';
 
 const isValidThemeMode = (value: string): value is ThemeMode =>
-    value === 'dark' || value === 'light' || value === 'system';
+    value === 'dark' || value === 'light';
 
 interface ThemeContextValue {
     mode: ThemeMode;
@@ -24,7 +24,7 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     const [mode, setModeState] = useState<ThemeMode>('dark');
     const systemColorScheme = useColorScheme();
-    const resolvedMode = resolveThemeMode(mode, systemColorScheme);
+    const resolvedMode = mode;
 
     useEffect(() => {
         let isMounted = true;
@@ -32,8 +32,19 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         const restoreTheme = async () => {
             try {
                 const storedMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-                if (isMounted && storedMode && isValidThemeMode(storedMode)) {
+                if (!isMounted || !storedMode) {
+                    return;
+                }
+
+                if (isValidThemeMode(storedMode)) {
                     setModeState(storedMode);
+                    return;
+                }
+
+                if (storedMode === 'system') {
+                    const migratedMode = resolveThemeMode(storedMode as PersistedThemeMode, systemColorScheme);
+                    setModeState(migratedMode);
+                    await AsyncStorage.setItem(THEME_STORAGE_KEY, migratedMode);
                 }
             } catch {
                 // Ignore storage errors and keep default mode.
@@ -45,7 +56,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         return () => {
             isMounted = false;
         };
-    }, []);
+    }, [systemColorScheme]);
 
     const setMode = useCallback((nextMode: ThemeMode) => {
         setModeState(nextMode);

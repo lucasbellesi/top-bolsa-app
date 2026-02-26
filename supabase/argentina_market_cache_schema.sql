@@ -4,6 +4,7 @@ create table if not exists public.argentina_market_cache (
   ticker_yahoo text not null,
   timeframe text not null check (timeframe in ('1H', '1D', '1W', '1M', '3M', '6M', '1Y', 'YTD')),
   market text not null default 'AR' check (market = 'AR'),
+  company_name text,
   price numeric not null,
   percent_change numeric not null,
   sparkline jsonb not null default '[]'::jsonb,

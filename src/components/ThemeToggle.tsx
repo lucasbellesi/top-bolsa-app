@@ -8,7 +8,7 @@ interface ThemeToggleProps {
     variant?: 'full' | 'compact';
 }
 
-const themeModes: ThemeMode[] = ['dark', 'light', 'system'];
+const themeModes: ThemeMode[] = ['dark', 'light'];
 
 export const ThemeToggle = ({ variant = 'full' }: ThemeToggleProps) => {
     const { mode, setMode, tokens } = useAppTheme();
@@ -21,7 +21,7 @@ export const ThemeToggle = ({ variant = 'full' }: ThemeToggleProps) => {
         >
             {themeModes.map((themeMode) => {
                 const isActive = mode === themeMode;
-                const label = compact ? themeMode.slice(0, 1).toUpperCase() : themeMode;
+                const label = themeMode === 'dark' ? 'D' : 'L';
 
                 return (
                     <Pressable
@@ -36,17 +36,17 @@ export const ThemeToggle = ({ variant = 'full' }: ThemeToggleProps) => {
                             AccessibilityInfo.announceForAccessibility(`Theme set to ${themeMode}`);
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Set ${themeMode} theme`}
+                        accessibilityLabel={`Set ${themeMode === 'dark' ? 'dark' : 'light'} theme`}
                         accessibilityState={{ selected: isActive }}
                         android_ripple={{ color: `${tokens.accent}33`, borderless: false }}
                         hitSlop={8}
-                        className={`items-center justify-center ${compact ? 'px-3 h-12 rounded-lg' : 'flex-1 h-12 rounded-xl'}`}
+                        className={`items-center justify-center ${compact ? 'px-2 h-10 rounded-lg' : 'flex-1 h-10 rounded-xl'}`}
                         style={{
                             backgroundColor: isActive ? tokens.accent : 'transparent',
                         }}
                     >
                         <Text
-                            className={`font-semibold ${compact ? 'text-sm uppercase' : 'text-base capitalize'}`}
+                            className={`font-semibold ${compact ? 'text-base' : 'text-lg'}`}
                             style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}
                         >
                             {label}

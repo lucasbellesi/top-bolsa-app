@@ -32,6 +32,7 @@ const mapTimeframeToDetailRange = (timeframe: TimeframeType): DetailRangeType =>
         case '1D':
         case '1W':
         case '1M':
+        case '3M':
         case 'YTD':
             return timeframe;
         default:
@@ -146,9 +147,11 @@ export const HomeScreen = () => {
                     ) : null}
                 </View>
 
-                <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
-                    {sourceHint}
-                </Text>
+                {sourceHint ? (
+                    <Text className="mt-2 text-xs" style={{ color: tokens.textMuted }}>
+                        {sourceHint}
+                    </Text>
+                ) : null}
                 {source === 'MOCK' ? (
                     <Text className="mt-1 text-xs" style={{ color: tokens.textMuted }}>
                         Demo mode: showing simulated prices.
@@ -168,7 +171,7 @@ export const HomeScreen = () => {
 
             <View className="px-4 flex-row gap-2 mb-3 items-start">
                 <MarketTabs compact activeMarket={market} onSelect={handleMarketSelect} />
-                <View style={{ width: 128 }}>
+                <View style={{ width: 96 }}>
                     <ThemeToggle variant="compact" />
                 </View>
             </View>
