@@ -18,7 +18,6 @@ import { useStockDetail } from '../hooks/useStockDetail';
 import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
 import { DetailRangeFilters } from '../components/DetailRangeFilters';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { useAppTheme } from '../theme/ThemeContext';
 import { formatClockTime, formatCurrencyValue, formatPercent, formatRelativeTime } from '../utils/format';
 import { appTypography } from '../theme/typography';
@@ -183,11 +182,6 @@ export const StockDetailScreen = ({ route }: Props) => {
                 ) : null}
             </View>
 
-            <View className="px-4 mb-3">
-                <View style={{ width: 96 }}>
-                    <ThemeToggle variant="compact" />
-                </View>
-            </View>
             <DetailRangeFilters activeRange={range} onSelect={handleRangeSelect} />
 
             <View

@@ -64,10 +64,10 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={`Open details for ${stock.ticker} (${companyName}), ${formattedChange}, ${freshness}${lastUpdatedAt ? `, updated at ${new Date(lastUpdatedAt).toLocaleTimeString()}` : ''}`}
-                className="h-28 px-4 flex-row items-center"
+                className="min-h-[118px] px-4 py-4 flex-row items-center"
                 style={({ pressed }) => ({ opacity: pressed ? 0.94 : 1 })}
             >
-                <View className="w-8 items-start">
+                <View className="w-8 items-start mr-2">
                     <View
                         className="h-7 min-w-7 px-2 rounded-full items-center justify-center"
                         style={{ backgroundColor: tokens.bgElevated }}
@@ -78,33 +78,49 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
                     </View>
                 </View>
 
-                <View className="flex-1 pl-2">
-                    <Text className="text-xl font-extrabold" style={[appTypography.heading, { color: tokens.textPrimary }]}>
+                <View className="flex-1 min-w-0 pr-3">
+                    <Text
+                        className="text-xl font-extrabold"
+                        style={[appTypography.heading, { color: tokens.textPrimary }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                    >
                         {stock.ticker}
                     </Text>
-                    <Text className="text-xs mt-1" style={{ color: tokens.textMuted }}>
+                    <Text
+                        className="text-xs mt-1 leading-5"
+                        style={{ color: tokens.textMuted }}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                    >
                         {companyName}
                     </Text>
-                    <Text className="text-xs mt-1" style={{ color: tokens.textMuted }}>
+                    <Text
+                        className="text-xs mt-1"
+                        style={{ color: tokens.textMuted }}
+                        numberOfLines={1}
+                    >
                         {stock.market}
                     </Text>
                 </View>
 
-                <View className="w-24 h-14 justify-center items-center">
+                <View className="w-[72px] h-14 justify-center items-center mr-3 shrink">
                     {stock.sparkline && stock.sparkline.length > 0 ? (
                         <LineChart.Provider data={stock.sparkline}>
-                            <LineChart height={50} width={88}>
+                            <LineChart height={46} width={72}>
                                 <LineChart.Path color={color} width={2} />
                             </LineChart>
                         </LineChart.Provider>
                     ) : null}
                 </View>
 
-                <View className="w-36 items-end">
+                <View className="min-w-[112px] max-w-[132px] items-end shrink-0">
                     <Text
                         className="text-lg font-bold"
                         style={[appTypography.numbers, { color: tokens.textPrimary }]}
                         numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
                     >
                         {formattedPrice}
                     </Text>

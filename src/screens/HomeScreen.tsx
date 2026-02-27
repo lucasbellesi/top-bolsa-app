@@ -15,7 +15,6 @@ import { CurrencyType, DataSourceType, DetailRangeType, MarketType, TimeframeTyp
 import { MarketTabs } from '../components/MarketTabs';
 import { TimeFilters } from '../components/TimeFilters';
 import { CurrencyToggle } from '../components/CurrencyToggle';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { StockListItem } from '../components/StockListItem';
 import { useUsdArsRate } from '../hooks/useUsdArsRate';
 import { convertValue, getConversionFactor, getNativeCurrencyForMarket } from '../utils/currency';
@@ -169,12 +168,7 @@ export const HomeScreen = () => {
                 ) : null}
             </View>
 
-            <View className="px-4 flex-row gap-2 mb-3 items-start">
-                <MarketTabs compact activeMarket={market} onSelect={handleMarketSelect} />
-                <View style={{ width: 96 }}>
-                    <ThemeToggle variant="compact" />
-                </View>
-            </View>
+            <MarketTabs activeMarket={market} onSelect={handleMarketSelect} />
 
             <CurrencyToggle activeCurrency={currency} onSelect={handleCurrencySelect} />
             <TimeFilters activeTimeframe={timeframe} onSelect={handleTimeframeSelect} />
@@ -238,7 +232,7 @@ export const HomeScreen = () => {
                     refreshing={isFetching && !isLoadingWithFx}
                     onRefresh={refetch}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 44 }}
+                    contentContainerStyle={{ paddingBottom: 56 }}
                     initialNumToRender={10}
                     windowSize={5}
                 />

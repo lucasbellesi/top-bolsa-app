@@ -36,7 +36,7 @@ export const MarketTabs = ({ activeMarket, onSelect, compact = false }: MarketTa
                         accessibilityState={{ selected: isActive }}
                         android_ripple={{ color: `${tokens.accent}33`, borderless: false }}
                         hitSlop={8}
-                        className="flex-1 h-12 items-center justify-center rounded-xl"
+                        className={`flex-1 h-12 items-center justify-center rounded-xl ${compact ? 'px-2' : 'px-3'}`}
                         style={{
                             backgroundColor: isActive ? tokens.bgSurface : 'transparent',
                             borderWidth: isActive ? 1 : 0,
@@ -44,9 +44,11 @@ export const MarketTabs = ({ activeMarket, onSelect, compact = false }: MarketTa
                         }}
                     >
                         <Text
-                            className={`font-semibold ${compact ? 'text-sm' : 'text-base'}`}
+                            className={`font-semibold ${compact ? 'text-sm' : 'text-[15px]'}`}
                             style={{ color: isActive ? tokens.textPrimary : tokens.textMuted }}
                             numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.85}
                         >
                             {market === 'AR' ? 'Argentina (BYMA)' : 'Wall Street (US)'}
                         </Text>
