@@ -261,3 +261,56 @@ describe('fetchUSMarketGainers (3M)', () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 });
+
+describe('fetchUSMarketGainers', () => {
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).__DEV__ = false;
+    vi.restoreAllMocks();
+  });
+
+  it('enriches live US rows with real company names when top gainers omits them', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'RSVRW', price: '304.97', change_percentage: '133.33%' },
+              { ticker: 'ALBT', price: '1582.95', change_percentage: '114.48%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=OVERVIEW') && url.includes('symbol=RSVRW')) {
+        return {
+          json: async () => ({
+            Name: 'Reservoir Media, Inc. Warrant',
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=OVERVIEW') && url.includes('symbol=ALBT')) {
+        return {
+          json: async () => ({
+            Name: 'Avalon GloboCare Corp.',
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1D');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(2);
+    expect(result.stocks[0].ticker).toBe('RSVRW');
+    expect(result.stocks[0].companyName).toBe('Reservoir Media, Inc. Warrant');
+    expect(result.stocks[1].companyName).toBe('Avalon GloboCare Corp.');
+    expect(fetchMock).toHaveBeenCalled();
+  });
+});

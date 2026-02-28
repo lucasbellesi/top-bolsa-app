@@ -5,6 +5,7 @@ const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
 const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
 const US_ONE_HOUR_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_THREE_MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface AlphaTopGainerRow {
     ticker: string;
@@ -27,6 +28,7 @@ interface USThreeMonthSnapshot {
 
 let usOneHourCache: { expiresAt: number; stocks: StockData[] } | null = null;
 let usThreeMonthCache: { expiresAt: number; stocks: StockData[] } | null = null;
+const usCompanyNameCache = new Map<string, { expiresAt: number; companyName: string }>();
 
 const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
     NVDA: 'NVIDIA Corporation',
@@ -123,6 +125,60 @@ const parseDailyPoints = (payload: Record<string, unknown>): Array<{ timestamp: 
 
 const resolveUSCompanyName = (ticker: string, rawName?: string): string =>
     (rawName && rawName.trim()) || US_COMPANY_NAME_BY_TICKER[ticker.toUpperCase()] || ticker.toUpperCase();
+
+const fetchUSCompanyName = async (ticker: string): Promise<string> => {
+    const normalizedTicker = ticker.toUpperCase();
+    const cached = usCompanyNameCache.get(normalizedTicker);
+
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.companyName;
+    }
+
+    const mappedName = US_COMPANY_NAME_BY_TICKER[normalizedTicker];
+    if (mappedName) {
+        usCompanyNameCache.set(normalizedTicker, {
+            companyName: mappedName,
+            expiresAt: Date.now() + US_COMPANY_NAME_CACHE_TTL_MS,
+        });
+        return mappedName;
+    }
+
+    try {
+        const response = await fetch(
+            `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${normalizedTicker}&apikey=${ALPHAVANTAGE_KEY}`
+        );
+        const payload = await response.json() as Record<string, unknown>;
+        const overviewName = typeof payload.Name === 'string' ? payload.Name.trim() : '';
+
+        const companyName = overviewName || normalizedTicker;
+        usCompanyNameCache.set(normalizedTicker, {
+            companyName,
+            expiresAt: Date.now() + US_COMPANY_NAME_CACHE_TTL_MS,
+        });
+
+        return companyName;
+    } catch (error) {
+        console.warn(`US company name fetch failed for ${normalizedTicker}:`, error);
+        return normalizedTicker;
+    }
+};
+
+const enrichUSStocksWithCompanyNames = async (stocks: StockData[]): Promise<StockData[]> => {
+    const enrichedStocks: StockData[] = [];
+
+    for (const stock of stocks) {
+        const companyName = stock.companyName && stock.companyName !== stock.ticker
+            ? stock.companyName
+            : await fetchUSCompanyName(stock.ticker);
+
+        enrichedStocks.push({
+            ...stock,
+            companyName,
+        });
+    }
+
+    return enrichedStocks;
+};
 
 const toUSStockFromTopGainer = (item: AlphaTopGainerRow): StockData | null => {
     const price = Number(item.price);
@@ -237,14 +293,18 @@ const fetchUSOneHourGainers = async (candidateTickers: string[]): Promise<{ stoc
         .sort((a, b) => b.percentChange - a.percentChange)
         .slice(0, 10);
 
-    if (ranked.length > 0) {
+    const enrichedRanked = ranked.length > 0
+        ? await enrichUSStocksWithCompanyNames(ranked)
+        : ranked;
+
+    if (enrichedRanked.length > 0) {
         usOneHourCache = {
-            stocks: ranked,
+            stocks: enrichedRanked,
             expiresAt: Date.now() + US_ONE_HOUR_CACHE_TTL_MS,
         };
     }
 
-    return { stocks: ranked, source: 'LIVE' };
+    return { stocks: enrichedRanked, source: 'LIVE' };
 };
 
 const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
@@ -281,14 +341,18 @@ const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ s
         .sort((a, b) => b.percentChange - a.percentChange)
         .slice(0, 10);
 
-    if (ranked.length > 0) {
+    const enrichedRanked = ranked.length > 0
+        ? await enrichUSStocksWithCompanyNames(ranked)
+        : ranked;
+
+    if (enrichedRanked.length > 0) {
         usThreeMonthCache = {
-            stocks: ranked,
+            stocks: enrichedRanked,
             expiresAt: Date.now() + US_THREE_MONTH_CACHE_TTL_MS,
         };
     }
 
-    return { stocks: ranked, source: 'LIVE' };
+    return { stocks: enrichedRanked, source: 'LIVE' };
 };
 
 export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
@@ -321,7 +385,8 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
                     .filter((stock): stock is StockData => stock !== null);
 
                 if (stocks.length > 0) {
-                    return { stocks, source: 'LIVE' };
+                    const enrichedStocks = await enrichUSStocksWithCompanyNames(stocks);
+                    return { stocks: enrichedStocks, source: 'LIVE' };
                 }
             }
         }
