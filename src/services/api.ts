@@ -8,7 +8,7 @@ const US_ONE_HOUR_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_THREE_MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const US_ONE_HOUR_INTRADAY_REQUEST_LIMIT = 4;
-const US_COMPANY_NAME_LOOKUP_LIMIT = 1;
+const US_COMPANY_NAME_LOOKUP_LIMIT = 10;
 
 interface AlphaTopGainerRow {
     ticker: string;
@@ -130,6 +130,41 @@ const parseDailyPoints = (payload: Record<string, unknown>): Array<{ timestamp: 
 const resolveUSCompanyName = (ticker: string, rawName?: string): string =>
     (rawName && rawName.trim()) || US_COMPANY_NAME_BY_TICKER[ticker.toUpperCase()] || ticker.toUpperCase();
 
+const fetchYahooCompanyName = async (ticker: string): Promise<string | null> => {
+    const normalizedTicker = ticker.toUpperCase();
+
+    try {
+        const response = await fetch(
+            `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(normalizedTicker)}&quotesCount=5&newsCount=0`,
+            {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                },
+            }
+        );
+        const payload = await response.json() as {
+            quotes?: Array<{
+                symbol?: string;
+                shortname?: string;
+                longname?: string;
+                quoteType?: string;
+            }>;
+        };
+
+        const exactQuote = payload.quotes?.find((quote) =>
+            quote.symbol?.toUpperCase() === normalizedTicker
+            && quote.quoteType !== 'OPTION'
+            && quote.quoteType !== 'CRYPTOCURRENCY'
+        );
+
+        const yahooName = exactQuote?.longname?.trim() || exactQuote?.shortname?.trim() || '';
+        return yahooName || null;
+    } catch (error) {
+        console.warn(`Yahoo company name fetch failed for ${normalizedTicker}:`, error);
+        return null;
+    }
+};
+
 const fetchUSCompanyName = async (ticker: string): Promise<string> => {
     const normalizedTicker = ticker.toUpperCase();
     const cached = usCompanyNameCache.get(normalizedTicker);
@@ -145,6 +180,15 @@ const fetchUSCompanyName = async (ticker: string): Promise<string> => {
             expiresAt: Date.now() + US_COMPANY_NAME_CACHE_TTL_MS,
         });
         return mappedName;
+    }
+
+    const yahooName = await fetchYahooCompanyName(normalizedTicker);
+    if (yahooName) {
+        usCompanyNameCache.set(normalizedTicker, {
+            companyName: yahooName,
+            expiresAt: Date.now() + US_COMPANY_NAME_CACHE_TTL_MS,
+        });
+        return yahooName;
     }
 
     try {

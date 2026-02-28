@@ -270,7 +270,7 @@ describe('fetchUSMarketGainers', () => {
     __resetUsApiCachesForTests();
   });
 
-  it('enriches at least one missing US company name without exhausting the request budget', async () => {
+  it('enriches live US rows with company names from yahoo search when top gainers omits them', async () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -285,18 +285,22 @@ describe('fetchUSMarketGainers', () => {
         } as Response;
       }
 
-      if (url.includes('function=OVERVIEW') && url.includes('symbol=RSVRW')) {
+      if (url.includes('finance/search') && url.includes('q=RSVRW')) {
         return {
           json: async () => ({
-            Name: 'Reservoir Media, Inc. Warrant',
+            quotes: [
+              { symbol: 'RSVRW', longname: 'Reservoir Media, Inc.', quoteType: 'EQUITY' },
+            ],
           }),
         } as Response;
       }
 
-      if (url.includes('function=OVERVIEW') && url.includes('symbol=ALBT')) {
+      if (url.includes('finance/search') && url.includes('q=ALBT')) {
         return {
           json: async () => ({
-            Name: 'Avalon GloboCare Corp.',
+            quotes: [
+              { symbol: 'ALBT', longname: 'Avalon GloboCare Corp.', quoteType: 'EQUITY' },
+            ],
           }),
         } as Response;
       }
@@ -311,8 +315,8 @@ describe('fetchUSMarketGainers', () => {
     expect(result.source).toBe('LIVE');
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('RSVRW');
-    expect(result.stocks[0].companyName).toBe('Reservoir Media, Inc. Warrant');
-    expect(result.stocks[1].companyName).toBe('ALBT');
+    expect(result.stocks[0].companyName).toBe('Reservoir Media, Inc.');
+    expect(result.stocks[1].companyName).toBe('Avalon GloboCare Corp.');
     expect(fetchMock).toHaveBeenCalled();
   });
 
@@ -363,6 +367,7 @@ describe('fetchUSMarketGainers', () => {
     expect(result.source).toBe('LIVE');
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('AAPL');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('finance/search'))).toBe(false);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('function=OVERVIEW'))).toBe(false);
   });
 });
