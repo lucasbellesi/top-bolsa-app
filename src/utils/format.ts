@@ -45,3 +45,41 @@ export const formatRelativeTime = (timestamp: number): string => {
     const daysAgo = Math.floor(hoursAgo / 24);
     return `${daysAgo}d ago`;
 };
+
+export const formatMarketCap = (
+    value: number,
+    currency: CurrencyType | null,
+    locale?: string,
+): string => {
+    if (!Number.isFinite(value) || value <= 0) {
+        return '';
+    }
+
+    const absoluteValue = Math.abs(value);
+    const prefix = currency === 'USD' ? 'US$' : '$';
+    let scaledValue = absoluteValue;
+    let suffix = '';
+
+    if (absoluteValue >= 1_000_000_000_000) {
+        scaledValue = absoluteValue / 1_000_000_000_000;
+        suffix = 'T';
+    } else if (absoluteValue >= 1_000_000_000) {
+        scaledValue = absoluteValue / 1_000_000_000;
+        suffix = 'B';
+    } else if (absoluteValue >= 1_000_000) {
+        scaledValue = absoluteValue / 1_000_000;
+        suffix = 'M';
+    } else if (absoluteValue >= 1_000) {
+        scaledValue = absoluteValue / 1_000;
+        suffix = 'K';
+    }
+
+    const resolvedLocale = locale || (currency === 'ARS' ? 'es-AR' : 'en-US');
+    const maximumFractionDigits = scaledValue >= 100 ? 0 : scaledValue >= 10 ? 1 : 2;
+    const formattedValue = new Intl.NumberFormat(resolvedLocale, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits,
+    }).format(scaledValue);
+
+    return `${prefix}${formattedValue}${suffix}`;
+};

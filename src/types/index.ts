@@ -36,3 +36,18 @@ export interface StockDetailData {
     source: DataSourceType;
     lastUpdatedAt: string;
 }
+
+export interface CompanyProfileData {
+    ticker: string;
+    market: MarketType;
+    companyName: string;
+    description?: string;
+    sector?: string;
+    industry?: string;
+    marketCap?: number;
+    exchange?: string;
+    country?: string;
+    website?: string;
+    source: DataSourceType;
+    lastUpdatedAt: string;
+}

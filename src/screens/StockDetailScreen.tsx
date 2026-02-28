@@ -23,12 +23,14 @@ import { formatClockTime, formatCurrencyValue, formatPercent, formatRelativeTime
 import { appTypography } from '../theme/typography';
 import { getSourceHint, mapSourceToFreshness } from '../utils/freshness';
 import { StockDetailSkeleton } from '../components/StockDetailSkeleton';
+import { useCompanyProfile } from '../hooks/useCompanyProfile';
+import { CompanyProfileCard } from '../components/CompanyProfileCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StockDetail'>;
 
 export const StockDetailScreen = ({ route }: Props) => {
     const { isDark, tokens } = useAppTheme();
-    const { ticker, market, currency, initialRange } = route.params;
+    const { ticker, market, currency, initialRange, companyName: initialCompanyName } = route.params;
     const [range, setRange] = useState<DetailRangeType>(initialRange);
 
     const nativeCurrency = getNativeCurrencyForMarket(market);
@@ -46,6 +48,11 @@ export const StockDetailScreen = ({ route }: Props) => {
         refetch,
         dataUpdatedAt,
     } = useStockDetail(ticker, market, range, currency);
+    const {
+        data: companyProfile,
+        isLoading: isProfileLoading,
+        isError: isProfileError,
+    } = useCompanyProfile(ticker, market, initialCompanyName);
 
     const isLoadingWithFx = isLoading || (needsFxConversion && isFxLoading && conversionFactor === null);
 
@@ -109,6 +116,7 @@ export const StockDetailScreen = ({ route }: Props) => {
     const chartColor = isPositive ? tokens.positive : tokens.negative;
     const formattedPrice = formatCurrencyValue(displayData.price, effectiveCurrency);
     const formattedPercent = formatPercent(displayData.percentChange);
+    const displayCompanyName = companyProfile?.companyName || initialCompanyName || displayData.ticker;
 
     const series = displayData.series;
     const firstValue = series[0]?.value ?? displayData.price;
@@ -136,6 +144,14 @@ export const StockDetailScreen = ({ route }: Props) => {
             <View className="px-4 pt-4 pb-2">
                 <Text className="text-4xl font-extrabold tracking-tight" style={[appTypography.heading, { color: tokens.textPrimary }]}>
                     {displayData.ticker}
+                </Text>
+                <Text
+                    className="mt-1 text-lg font-semibold"
+                    style={{ color: tokens.textSecondary }}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                >
+                    {displayCompanyName}
                 </Text>
                 <Text className="mt-1 text-base" style={{ color: tokens.textSecondary }}>
                     Market: {displayData.market} • {freshness}
@@ -210,6 +226,13 @@ export const StockDetailScreen = ({ route }: Props) => {
                     </Text>
                 </View>
             </View>
+
+            <CompanyProfileCard
+                profile={companyProfile}
+                isLoading={isProfileLoading}
+                isError={isProfileError}
+                fallbackCompanyName={displayCompanyName}
+            />
 
             <View
                 className="mx-4 mt-4 p-4 rounded-2xl border"

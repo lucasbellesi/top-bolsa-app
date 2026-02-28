@@ -225,6 +225,7 @@ export const HomeScreen = () => {
                                     currency: effectiveCurrency,
                                     initialRange: mapTimeframeToDetailRange(timeframe),
                                     source,
+                                    companyName: item.companyName,
                                 })
                             }
                         />

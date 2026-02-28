@@ -8,5 +8,6 @@ export type RootStackParamList = {
         currency: CurrencyType;
         initialRange: DetailRangeType;
         source?: DataSourceType;
+        companyName?: string;
     };
 };
