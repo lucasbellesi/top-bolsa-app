@@ -285,6 +285,28 @@ describe('fetchUSMarketGainers', () => {
         } as Response;
       }
 
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=RSVRW')) {
+        return {
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '304.97' },
+              '2026-02-25 16:00:00': { '4. close': '130.70' },
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=ALBT')) {
+        return {
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '1582.95' },
+              '2026-02-25 16:00:00': { '4. close': '738.10' },
+            },
+          }),
+        } as Response;
+      }
+
       if (url.includes('finance/search') && url.includes('q=RSVRW')) {
         return {
           json: async () => ({
@@ -318,6 +340,58 @@ describe('fetchUSMarketGainers', () => {
     expect(result.stocks[0].companyName).toBe('Reservoir Media, Inc.');
     expect(result.stocks[1].companyName).toBe('Avalon GloboCare Corp.');
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('calculates 1M rankings from daily history instead of raw top movers percentages', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'AAPL', price: '200', change_percentage: '99%' },
+              { ticker: 'MSFT', price: '410', change_percentage: '1%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_DAILY') && url.includes('symbol=AAPL')) {
+        return {
+          json: async () => ({
+            'Time Series (Daily)': {
+              '2026-02-26': { '4. close': '105.00' },
+              '2026-01-26': { '4. close': '100.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_DAILY') && url.includes('symbol=MSFT')) {
+        return {
+          json: async () => ({
+            'Time Series (Daily)': {
+              '2026-02-26': { '4. close': '130.00' },
+              '2026-01-26': { '4. close': '100.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1M');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(2);
+    expect(result.stocks[0].ticker).toBe('MSFT');
+    expect(result.stocks[0].percentChange).toBeCloseTo(30, 5);
+    expect(result.stocks[1].ticker).toBe('AAPL');
+    expect(result.stocks[1].percentChange).toBeCloseTo(5, 5);
   });
 
   it('avoids extra company name lookups for 1H so intraday data can still load', async () => {

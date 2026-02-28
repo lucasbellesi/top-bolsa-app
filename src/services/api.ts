@@ -1,14 +1,22 @@
 import { DataSourceType, MarketType, TimeframeType, StockData, SparklinePoint, StockRankingData } from '../types';
 import { supabase } from './supabase';
+import {
+    buildHistoricalSnapshot,
+    isAlphaVantageError,
+    parseDailySeries,
+    parseIntradaySeries,
+} from './series';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
 const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
 const US_TOP_GAINERS_CACHE_TTL_MS = 60 * 1000;
-const US_ONE_HOUR_CACHE_TTL_MS = 5 * 60 * 1000;
-const US_THREE_MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const US_RANKING_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const US_ONE_HOUR_INTRADAY_REQUEST_LIMIT = 4;
+const US_INTRADAY_MAX_REQUESTS = 8;
+const US_INTRADAY_TARGET_RESULTS = 5;
+const US_DAILY_MAX_REQUESTS = 12;
 const US_COMPANY_NAME_LOOKUP_LIMIT = 10;
+const US_CANDIDATE_POOL_LIMIT = 24;
 
 interface AlphaTopGainerRow {
     ticker: string;
@@ -17,21 +25,14 @@ interface AlphaTopGainerRow {
     name?: string;
 }
 
-interface USOneHourSnapshot {
-    price: number;
-    percentChange: number;
-    sparkline: SparklinePoint[];
+interface AlphaTopMoversResponse {
+    top_gainers?: AlphaTopGainerRow[];
+    top_losers?: AlphaTopGainerRow[];
+    most_actively_traded?: AlphaTopGainerRow[];
 }
 
-interface USThreeMonthSnapshot {
-    price: number;
-    percentChange: number;
-    sparkline: SparklinePoint[];
-}
-
-let usOneHourCache: { expiresAt: number; stocks: StockData[] } | null = null;
-let usThreeMonthCache: { expiresAt: number; stocks: StockData[] } | null = null;
-let usTopGainersCache: { expiresAt: number; rows: AlphaTopGainerRow[] } | null = null;
+let usTopMoversCache: { expiresAt: number; rows: AlphaTopGainerRow[] } | null = null;
+const usRankingCache = new Map<TimeframeType, { expiresAt: number; stocks: StockData[] }>();
 const usCompanyNameCache = new Map<string, { expiresAt: number; companyName: string }>();
 
 const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
@@ -72,59 +73,6 @@ const generateMockSparkline = (basePrice: number, points: number = 20): Sparklin
     }
     line.push({ timestamp: now, value: basePrice });
     return line;
-};
-
-const parseIntradayPoints = (payload: Record<string, unknown>): Array<{ timestamp: number; close: number }> => {
-    const seriesKey = Object.keys(payload).find((key) => key.startsWith('Time Series ('));
-    if (!seriesKey) {
-        return [];
-    }
-
-    const series = payload[seriesKey];
-    if (!series || typeof series !== 'object') {
-        return [];
-    }
-
-    return Object.entries(series as Record<string, unknown>)
-        .map(([timestampRaw, row]) => {
-            const timestamp = new Date(timestampRaw).getTime();
-            const closeRaw = row && typeof row === 'object'
-                ? (row as Record<string, unknown>)['4. close']
-                : undefined;
-            const close = Number(closeRaw);
-
-            if (!Number.isFinite(timestamp) || !Number.isFinite(close)) {
-                return null;
-            }
-
-            return { timestamp, close };
-        })
-        .filter((point): point is { timestamp: number; close: number } => point !== null)
-        .sort((a, b) => a.timestamp - b.timestamp);
-};
-
-const parseDailyPoints = (payload: Record<string, unknown>): Array<{ timestamp: number; close: number }> => {
-    const series = payload['Time Series (Daily)'];
-    if (!series || typeof series !== 'object') {
-        return [];
-    }
-
-    return Object.entries(series as Record<string, unknown>)
-        .map(([dateRaw, row]) => {
-            const timestamp = new Date(`${dateRaw}T00:00:00Z`).getTime();
-            const closeRaw = row && typeof row === 'object'
-                ? (row as Record<string, unknown>)['4. close']
-                : undefined;
-            const close = Number(closeRaw);
-
-            if (!Number.isFinite(timestamp) || !Number.isFinite(close)) {
-                return null;
-            }
-
-            return { timestamp, close };
-        })
-        .filter((point): point is { timestamp: number; close: number } => point !== null)
-        .sort((a, b) => a.timestamp - b.timestamp);
 };
 
 const resolveUSCompanyName = (ticker: string, rawName?: string): string =>
@@ -241,17 +189,32 @@ const enrichUSStocksWithCompanyNames = async (
     return enrichedStocks;
 };
 
-const fetchUSTopGainers = async (): Promise<AlphaTopGainerRow[]> => {
-    if (usTopGainersCache && usTopGainersCache.expiresAt > Date.now()) {
-        return usTopGainersCache.rows;
+const fetchUSTopMovers = async (): Promise<AlphaTopGainerRow[]> => {
+    if (usTopMoversCache && usTopMoversCache.expiresAt > Date.now()) {
+        return usTopMoversCache.rows;
     }
 
     const res = await fetch(`https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`);
-    const data = await res.json() as { top_gainers?: AlphaTopGainerRow[] };
-    const rows = Array.isArray(data.top_gainers) ? data.top_gainers : [];
+    const data = await res.json() as AlphaTopMoversResponse;
+
+    const mergedRows = [
+        ...(Array.isArray(data.top_gainers) ? data.top_gainers : []),
+        ...(Array.isArray(data.most_actively_traded) ? data.most_actively_traded : []),
+        ...(Array.isArray(data.top_losers) ? data.top_losers : []),
+    ];
+
+    const seen = new Set<string>();
+    const rows = mergedRows.filter((row) => {
+        const ticker = row.ticker?.toUpperCase();
+        if (!ticker || seen.has(ticker)) {
+            return false;
+        }
+        seen.add(ticker);
+        return true;
+    }).slice(0, US_CANDIDATE_POOL_LIMIT);
 
     if (rows.length > 0) {
-        usTopGainersCache = {
+        usTopMoversCache = {
             rows,
             expiresAt: Date.now() + US_TOP_GAINERS_CACHE_TTL_MS,
         };
@@ -260,169 +223,61 @@ const fetchUSTopGainers = async (): Promise<AlphaTopGainerRow[]> => {
     return rows;
 };
 
-const toUSStockFromTopGainer = (item: AlphaTopGainerRow): StockData | null => {
-    const price = Number(item.price);
-    const changePercent = Number((item.change_percentage || '').replace('%', ''));
-    if (!Number.isFinite(price) || !Number.isFinite(changePercent)) {
+const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeType) => {
+    const isIntradayRange = timeframe === '1H' || timeframe === '1D';
+    const endpoint = isIntradayRange
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
+        : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
+
+    const response = await fetch(endpoint);
+    const payload = await response.json() as Record<string, unknown>;
+
+    if (isAlphaVantageError(payload)) {
         return null;
     }
 
-    return {
-        id: item.ticker,
-        ticker: item.ticker,
-        companyName: resolveUSCompanyName(item.ticker, item.name),
-        market: 'US',
-        price,
-        percentChange: changePercent,
-        sparkline: generateMockSparkline(price),
-    };
+    const series = isIntradayRange ? parseIntradaySeries(payload) : parseDailySeries(payload);
+    return buildHistoricalSnapshot(series, timeframe);
 };
 
-const fetchUSOneHourSnapshot = async (ticker: string): Promise<USOneHourSnapshot | null> => {
-    const res = await fetch(
-        `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
-    );
-    const payload = (await res.json()) as Record<string, unknown>;
-    if (payload.Note || payload['Error Message'] || payload.Information) {
-        return null;
+const fetchUSRankingByTimeframe = async (
+    timeframe: TimeframeType,
+    candidateRows: AlphaTopGainerRow[],
+): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
+    const cached = usRankingCache.get(timeframe);
+    if (cached && cached.expiresAt > Date.now()) {
+        return { stocks: cached.stocks, source: 'CACHE' };
     }
 
-    const points = parseIntradayPoints(payload);
-    if (points.length < 2) {
-        return null;
-    }
-
-    const latest = points[points.length - 1];
-    const oneHourAgoTs = latest.timestamp - 60 * 60 * 1000;
-    const baseline = [...points].reverse().find((point) => point.timestamp <= oneHourAgoTs) ?? points[0];
-    if (baseline.close <= 0 || latest.close <= 0) {
-        return null;
-    }
-
-    return {
-        price: latest.close,
-        percentChange: ((latest.close - baseline.close) / baseline.close) * 100,
-        sparkline: points.map((point) => ({ timestamp: point.timestamp, value: point.close })),
-    };
-};
-
-const fetchUSThreeMonthSnapshot = async (ticker: string): Promise<USThreeMonthSnapshot | null> => {
-    const res = await fetch(
-        `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`
-    );
-    const payload = (await res.json()) as Record<string, unknown>;
-    if (payload.Note || payload['Error Message'] || payload.Information) {
-        return null;
-    }
-
-    const points = parseDailyPoints(payload);
-    if (points.length < 2) {
-        return null;
-    }
-
-    const latest = points[points.length - 1];
-    const threeMonthsAgo = new Date(latest.timestamp);
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    const threeMonthsAgoTs = threeMonthsAgo.getTime();
-
-    const baseline = [...points].reverse().find((point) => point.timestamp <= threeMonthsAgoTs) ?? points[0];
-    if (baseline.close <= 0 || latest.close <= 0) {
-        return null;
-    }
-
-    const sparklinePoints = points.filter((point) => point.timestamp >= baseline.timestamp);
-
-    return {
-        price: latest.close,
-        percentChange: ((latest.close - baseline.close) / baseline.close) * 100,
-        sparkline: sparklinePoints.map((point) => ({ timestamp: point.timestamp, value: point.close })),
-    };
-};
-
-const fetchUSOneHourGainers = async (candidateTickers: string[]): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
-    if (usOneHourCache && usOneHourCache.expiresAt > Date.now()) {
-        return { stocks: usOneHourCache.stocks, source: 'CACHE' };
-    }
-
-    const uniqueTickers = [...new Set(candidateTickers)];
+    const isIntradayRange = timeframe === '1H' || timeframe === '1D';
+    const maxRequests = isIntradayRange ? US_INTRADAY_MAX_REQUESTS : US_DAILY_MAX_REQUESTS;
+    const targetResults = isIntradayRange ? US_INTRADAY_TARGET_RESULTS : 10;
     const stocks: StockData[] = [];
-    let attempts = 0;
+    let requestCount = 0;
 
-    for (const ticker of uniqueTickers) {
-        if (attempts >= US_ONE_HOUR_INTRADAY_REQUEST_LIMIT) {
+    for (const row of candidateRows) {
+        if (requestCount >= maxRequests || stocks.length >= targetResults) {
             break;
         }
 
         try {
-            attempts += 1;
-            const snapshot = await fetchUSOneHourSnapshot(ticker);
+            requestCount += 1;
+            const snapshot = await fetchUSHistoricalSnapshot(row.ticker, timeframe);
             if (!snapshot) {
                 continue;
             }
 
             stocks.push({
-                id: ticker,
-                ticker,
-                companyName: resolveUSCompanyName(ticker),
+                id: row.ticker,
+                ticker: row.ticker,
+                companyName: resolveUSCompanyName(row.ticker, row.name),
                 market: 'US',
                 price: snapshot.price,
                 percentChange: snapshot.percentChange,
                 sparkline: snapshot.sparkline,
             });
         } catch (error) {
-            console.warn(`US 1H fetch failed for ${ticker}:`, error);
-        }
-    }
-
-    const ranked = stocks
-        .filter((stock) => Number.isFinite(stock.percentChange))
-        .sort((a, b) => b.percentChange - a.percentChange)
-        .slice(0, 10);
-
-    if (ranked.length > 0) {
-        usOneHourCache = {
-            stocks: ranked,
-            expiresAt: Date.now() + US_ONE_HOUR_CACHE_TTL_MS,
-        };
-    }
-
-    if (ranked.length > 0) {
-        return { stocks: ranked, source: 'LIVE' };
-    }
-
-    if (usOneHourCache?.stocks.length) {
-        return { stocks: usOneHourCache.stocks, source: 'CACHE' };
-    }
-
-    return { stocks: [], source: 'UNAVAILABLE' };
-};
-
-const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
-    if (usThreeMonthCache && usThreeMonthCache.expiresAt > Date.now()) {
-        return { stocks: usThreeMonthCache.stocks, source: 'CACHE' };
-    }
-
-    const uniqueTickers = [...new Set(candidateTickers)].slice(0, 12);
-    const stocks: StockData[] = [];
-
-    for (const ticker of uniqueTickers) {
-        try {
-            const snapshot = await fetchUSThreeMonthSnapshot(ticker);
-            if (!snapshot) {
-                continue;
-            }
-
-            stocks.push({
-                id: ticker,
-                ticker,
-                companyName: resolveUSCompanyName(ticker),
-                market: 'US',
-                price: snapshot.price,
-                percentChange: snapshot.percentChange,
-                sparkline: snapshot.sparkline,
-            });
-        } catch (error) {
-            console.warn(`US 3M fetch failed for ${ticker}:`, error);
+            console.warn(`US ${timeframe} fetch failed for ${row.ticker}:`, error);
         }
     }
 
@@ -432,51 +287,36 @@ const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ s
         .slice(0, 10);
 
     const enrichedRanked = ranked.length > 0
-        ? await enrichUSStocksWithCompanyNames(ranked, 0)
+        ? await enrichUSStocksWithCompanyNames(ranked, timeframe === '1H' ? 0 : US_COMPANY_NAME_LOOKUP_LIMIT)
         : ranked;
 
     if (enrichedRanked.length > 0) {
-        usThreeMonthCache = {
+        usRankingCache.set(timeframe, {
             stocks: enrichedRanked,
-            expiresAt: Date.now() + US_THREE_MONTH_CACHE_TTL_MS,
-        };
+            expiresAt: Date.now() + US_RANKING_CACHE_TTL_MS,
+        });
+        return { stocks: enrichedRanked, source: 'LIVE' };
     }
 
-    return { stocks: enrichedRanked, source: 'LIVE' };
+    if (cached?.stocks.length) {
+        return { stocks: cached.stocks, source: 'CACHE' };
+    }
+
+    return { stocks: [], source: 'UNAVAILABLE' };
 };
 
 export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
-    if (timeframe === '1H' && usOneHourCache && usOneHourCache.expiresAt > Date.now()) {
-        return { stocks: usOneHourCache.stocks, source: 'CACHE' };
-    }
-    if (timeframe === '3M' && usThreeMonthCache && usThreeMonthCache.expiresAt > Date.now()) {
-        return { stocks: usThreeMonthCache.stocks, source: 'CACHE' };
+    const cached = usRankingCache.get(timeframe);
+    if (cached && cached.expiresAt > Date.now()) {
+        return { stocks: cached.stocks, source: 'CACHE' };
     }
 
     try {
-        const topGainers = await fetchUSTopGainers();
-
-        if (topGainers.length > 0) {
-            if (timeframe === '1H') {
-                const hourlyResult = await fetchUSOneHourGainers(topGainers.map((row) => row.ticker));
-                if (hourlyResult.stocks.length > 0) {
-                    return { stocks: hourlyResult.stocks, source: hourlyResult.source };
-                }
-            } else if (timeframe === '3M') {
-                const quarterlyResult = await fetchUSThreeMonthGainers(topGainers.map((row) => row.ticker));
-                if (quarterlyResult.stocks.length > 0) {
-                    return { stocks: quarterlyResult.stocks, source: quarterlyResult.source };
-                }
-            } else {
-                const stocks = topGainers
-                    .slice(0, 10)
-                    .map((item) => toUSStockFromTopGainer(item))
-                    .filter((stock): stock is StockData => stock !== null);
-
-                if (stocks.length > 0) {
-                    const enrichedStocks = await enrichUSStocksWithCompanyNames(stocks);
-                    return { stocks: enrichedStocks, source: 'LIVE' };
-                }
+        const topMovers = await fetchUSTopMovers();
+        if (topMovers.length > 0) {
+            const result = await fetchUSRankingByTimeframe(timeframe, topMovers);
+            if (result.stocks.length > 0) {
+                return result;
             }
         }
     } catch (error) {
@@ -532,9 +372,8 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
 };
 
 export const __resetUsApiCachesForTests = (): void => {
-    usOneHourCache = null;
-    usThreeMonthCache = null;
-    usTopGainersCache = null;
+    usTopMoversCache = null;
+    usRankingCache.clear();
     usCompanyNameCache.clear();
 };
 
