@@ -12,8 +12,7 @@ const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK ===
 const US_TOP_GAINERS_CACHE_TTL_MS = 60 * 1000;
 const US_RANKING_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const US_INTRADAY_MAX_REQUESTS = 8;
-const US_INTRADAY_TARGET_RESULTS = 5;
+const US_INTRADAY_MAX_REQUESTS = 16;
 const US_DAILY_MAX_REQUESTS = 12;
 const US_COMPANY_NAME_LOOKUP_LIMIT = 10;
 const US_CANDIDATE_POOL_LIMIT = 24;
@@ -226,7 +225,7 @@ const fetchUSTopMovers = async (): Promise<AlphaTopGainerRow[]> => {
 const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeType) => {
     const isIntradayRange = timeframe === '1H' || timeframe === '1D';
     const endpoint = isIntradayRange
-        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=${timeframe === '1D' ? 'full' : 'compact'}&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const response = await fetch(endpoint);
@@ -237,7 +236,7 @@ const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeTyp
     }
 
     const series = isIntradayRange ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    return buildHistoricalSnapshot(series, timeframe);
+    return buildHistoricalSnapshot(series, timeframe, { requireFullCoverage: true });
 };
 
 const fetchUSRankingByTimeframe = async (
@@ -251,12 +250,11 @@ const fetchUSRankingByTimeframe = async (
 
     const isIntradayRange = timeframe === '1H' || timeframe === '1D';
     const maxRequests = isIntradayRange ? US_INTRADAY_MAX_REQUESTS : US_DAILY_MAX_REQUESTS;
-    const targetResults = isIntradayRange ? US_INTRADAY_TARGET_RESULTS : 10;
     const stocks: StockData[] = [];
     let requestCount = 0;
 
     for (const row of candidateRows) {
-        if (requestCount >= maxRequests || stocks.length >= targetResults) {
+        if (requestCount >= maxRequests || stocks.length >= 10) {
             break;
         }
 

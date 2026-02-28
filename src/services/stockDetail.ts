@@ -1,6 +1,7 @@
 import { DataSourceType, DetailRangeType, MarketType, SparklinePoint, StockData, StockDetailData } from '../types';
 import { supabase } from './supabase';
 import {
+    buildHistoricalSnapshot,
     computePercentChangeFromSeries,
     isAlphaVantageError,
     parseDailySeries,
@@ -75,7 +76,7 @@ const toDetailPayload = (
 const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<SparklinePoint[]> => {
     const isIntradayRange = range === '1H' || range === '1D';
     const endpoint = isIntradayRange
-        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=${range === '1D' ? 'full' : 'compact'}&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const res = await fetch(endpoint);
@@ -97,13 +98,13 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
     }
 
     const parsedSeries = isIntradayRange ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    const slicedSeries = sliceSeriesByDetailRange(parsedSeries, range);
+    const snapshot = buildHistoricalSnapshot(parsedSeries, range, { requireFullCoverage: true });
 
-    if (slicedSeries.length < 2) {
+    if (!snapshot || snapshot.sparkline.length < 2) {
         throw new Error(`Insufficient US detail data for ${ticker} in range ${range}`);
     }
 
-    return slicedSeries;
+    return snapshot.sparkline;
 };
 
 export const mapEdgeFunctionStockToDetail = (

@@ -444,4 +444,40 @@ describe('fetchUSMarketGainers', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('finance/search'))).toBe(false);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('function=OVERVIEW'))).toBe(false);
   });
+
+  it('rejects 1D US data when intraday history does not cover a full day', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'AAPL', price: '200', change_percentage: '1.2%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=AAPL')) {
+        return {
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '210.00' },
+              '2026-02-26 15:55:00': { '4. close': '200.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1D');
+
+    expect(result.source).toBe('UNAVAILABLE');
+    expect(result.stocks).toHaveLength(0);
+  });
 });

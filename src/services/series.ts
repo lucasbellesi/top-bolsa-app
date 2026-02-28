@@ -135,8 +135,27 @@ export const isAlphaVantageError = (payload: Record<string, unknown>): boolean =
 export const buildHistoricalSnapshot = (
     series: SparklinePoint[],
     range: HistoricalRange,
+    options?: {
+        referenceTimestamp?: number;
+        requireFullCoverage?: boolean;
+    }
 ): { price: number; percentChange: number; sparkline: SparklinePoint[] } | null => {
-    const slicedSeries = sliceSeriesByRange(series, range);
+    const sorted = [...series]
+        .filter((point) => Number.isFinite(point.timestamp) && Number.isFinite(point.value))
+        .sort((a, b) => a.timestamp - b.timestamp);
+
+    if (sorted.length < 2) {
+        return null;
+    }
+
+    const latestTimestamp = options?.referenceTimestamp ?? sorted[sorted.length - 1].timestamp;
+    const requiredStartTimestamp = getRangeStartTimestamp(range, latestTimestamp);
+
+    if (options?.requireFullCoverage && sorted[0].timestamp > requiredStartTimestamp) {
+        return null;
+    }
+
+    const slicedSeries = sliceSeriesByRange(sorted, range, latestTimestamp);
 
     if (slicedSeries.length < 2) {
         return null;

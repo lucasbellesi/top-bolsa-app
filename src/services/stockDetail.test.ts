@@ -6,6 +6,7 @@ vi.mock('./supabase', () => ({
 }));
 
 import { computePercentChangeFromSeries, mapEdgeFunctionStockToDetail, sliceSeriesByDetailRange } from './stockDetail';
+import { buildHistoricalSnapshot } from './series';
 
 const buildDailySeries = (days: number): SparklinePoint[] => {
     const now = Date.now();
@@ -38,6 +39,16 @@ describe('stock detail helpers', () => {
         ];
 
         expect(computePercentChangeFromSeries(series)).toBe(10);
+    });
+
+    it('rejects historical snapshots when the requested range is not fully covered', () => {
+        const now = Date.now();
+        const shortIntradaySeries: SparklinePoint[] = [
+            { timestamp: now - (10 * 60 * 1000), value: 100 },
+            { timestamp: now, value: 105 },
+        ];
+
+        expect(buildHistoricalSnapshot(shortIntradaySeries, '1D', { requireFullCoverage: true })).toBeNull();
     });
 
     it('maps AR edge-function response to stock detail payload', () => {
