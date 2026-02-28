@@ -12,8 +12,8 @@ const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK ===
 const US_TOP_GAINERS_CACHE_TTL_MS = 60 * 1000;
 const US_RANKING_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const US_INTRADAY_MAX_REQUESTS = 16;
-const US_DAILY_MAX_REQUESTS = 12;
+const US_INTRADAY_MAX_REQUESTS = 5;
+const US_DAILY_MAX_REQUESTS = 6;
 const US_COMPANY_NAME_LOOKUP_LIMIT = 10;
 const US_CANDIDATE_POOL_LIMIT = 24;
 
@@ -76,6 +76,50 @@ const generateMockSparkline = (basePrice: number, points: number = 20): Sparklin
 
 const resolveUSCompanyName = (ticker: string, rawName?: string): string =>
     (rawName && rawName.trim()) || US_COMPANY_NAME_BY_TICKER[ticker.toUpperCase()] || ticker.toUpperCase();
+
+const parsePercentString = (rawValue?: string): number => {
+    const normalizedValue = (rawValue || '').replace('%', '').trim();
+    const parsedValue = Number(normalizedValue);
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+
+const buildFallbackSparkline = (currentPrice: number, percentChange: number): SparklinePoint[] => {
+    const now = Date.now();
+    const baselinePrice = percentChange <= -100
+        ? currentPrice
+        : currentPrice / (1 + (percentChange / 100));
+
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+        return [];
+    }
+
+    const safeBaselinePrice = Number.isFinite(baselinePrice) && baselinePrice > 0
+        ? baselinePrice
+        : currentPrice;
+
+    return [
+        { timestamp: now - (60 * 60 * 1000), value: safeBaselinePrice },
+        { timestamp: now, value: currentPrice },
+    ];
+};
+
+const buildFallbackUSStock = (row: AlphaTopGainerRow): StockData | null => {
+    const price = Number(row.price);
+    if (!Number.isFinite(price) || price <= 0) {
+        return null;
+    }
+
+    const percentChange = parsePercentString(row.change_percentage);
+    return {
+        id: row.ticker,
+        ticker: row.ticker,
+        companyName: resolveUSCompanyName(row.ticker, row.name),
+        market: 'US',
+        price,
+        percentChange,
+        sparkline: buildFallbackSparkline(price, percentChange),
+    };
+};
 
 const fetchYahooCompanyName = async (ticker: string): Promise<string | null> => {
     const normalizedTicker = ticker.toUpperCase();
@@ -223,9 +267,9 @@ const fetchUSTopMovers = async (): Promise<AlphaTopGainerRow[]> => {
 };
 
 const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeType) => {
-    const isIntradayRange = timeframe === '1H' || timeframe === '1D';
-    const endpoint = isIntradayRange
-        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=${timeframe === '1D' ? 'full' : 'compact'}&apikey=${ALPHAVANTAGE_KEY}`
+    const useIntradaySeries = timeframe === '1H';
+    const endpoint = useIntradaySeries
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const response = await fetch(endpoint);
@@ -235,8 +279,8 @@ const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeTyp
         return null;
     }
 
-    const series = isIntradayRange ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    return buildHistoricalSnapshot(series, timeframe, { requireFullCoverage: true });
+    const series = useIntradaySeries ? parseIntradaySeries(payload) : parseDailySeries(payload);
+    return buildHistoricalSnapshot(series, timeframe);
 };
 
 const fetchUSRankingByTimeframe = async (
@@ -248,7 +292,7 @@ const fetchUSRankingByTimeframe = async (
         return { stocks: cached.stocks, source: 'CACHE' };
     }
 
-    const isIntradayRange = timeframe === '1H' || timeframe === '1D';
+    const isIntradayRange = timeframe === '1H';
     const maxRequests = isIntradayRange ? US_INTRADAY_MAX_REQUESTS : US_DAILY_MAX_REQUESTS;
     const stocks: StockData[] = [];
     let requestCount = 0;
@@ -283,6 +327,17 @@ const fetchUSRankingByTimeframe = async (
         .filter((stock) => Number.isFinite(stock.percentChange))
         .sort((a, b) => b.percentChange - a.percentChange)
         .slice(0, 10);
+
+    if (ranked.length < 10) {
+        const existingTickers = new Set(ranked.map((stock) => stock.ticker.toUpperCase()));
+        const fallbackStocks = candidateRows
+            .filter((row) => !existingTickers.has(row.ticker.toUpperCase()))
+            .map((row) => buildFallbackUSStock(row))
+            .filter((stock): stock is StockData => stock !== null)
+            .slice(0, 10 - ranked.length);
+
+        ranked.push(...fallbackStocks);
+    }
 
     const enrichedRanked = ranked.length > 0
         ? await enrichUSStocksWithCompanyNames(ranked, timeframe === '1H' ? 0 : US_COMPANY_NAME_LOOKUP_LIMIT)

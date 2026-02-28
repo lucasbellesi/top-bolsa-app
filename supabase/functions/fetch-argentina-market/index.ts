@@ -154,7 +154,7 @@ const timeframeToStartDate = (timeframe: TimeframeType): Date => {
   switch (timeframe) {
     case "1H": {
       const d = new Date(now);
-      d.setHours(d.getHours() - 2);
+      d.setDate(d.getDate() - 5);
       return d;
     }
     case "1D": {
@@ -338,11 +338,20 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
       };
     }
 
-    const historical = await yahooFinance.historical(yahooTicker, {
-      period1: timeframeToStartDate(timeframe),
-      period2: new Date(),
-      interval: timeframeToInterval(timeframe),
-    });
+    let historical: Array<{ close?: number; date?: Date }> = [];
+    try {
+      historical = await yahooFinance.historical(yahooTicker, {
+        period1: timeframeToStartDate(timeframe),
+        period2: new Date(),
+        interval: timeframeToInterval(timeframe),
+      });
+    } catch (error) {
+      logEvent("WARN", "byma_historical_fetch_failed", {
+        ticker,
+        timeframe,
+        ...toErrorDetails(error),
+      });
+    }
 
     const sparkline = normalizedSparkline(historical, priceCandidate);
     const companyNameCandidate =
@@ -352,11 +361,12 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
           ? quote.shortName
           : ticker).trim();
 
+    const computedOneHourChange = computePercentFromOneHourWindow(historical, priceCandidate);
     const percentChange = timeframe === "1D" && isFiniteNumber(quote.regularMarketChangePercent)
       ? quote.regularMarketChangePercent
       : timeframe === "1H"
-      ? computePercentFromOneHourWindow(historical, priceCandidate)
-      : computePercentFromHistory(historical, priceCandidate);
+      ? (historical.length > 0 ? computedOneHourChange : isFiniteNumber(quote.regularMarketChangePercent) ? quote.regularMarketChangePercent : 0)
+      : (historical.length > 0 ? computePercentFromHistory(historical, priceCandidate) : isFiniteNumber(quote.regularMarketChangePercent) ? quote.regularMarketChangePercent : 0);
 
     return {
       stock: {

@@ -445,7 +445,7 @@ describe('fetchUSMarketGainers', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('function=OVERVIEW'))).toBe(false);
   });
 
-  it('rejects 1D US data when intraday history does not cover a full day', async () => {
+  it('uses daily history for 1D US rankings', async () => {
     vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -459,12 +459,12 @@ describe('fetchUSMarketGainers', () => {
         } as Response;
       }
 
-      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=AAPL')) {
+      if (url.includes('function=TIME_SERIES_DAILY') && url.includes('symbol=AAPL')) {
         return {
           json: async () => ({
-            'Time Series (5min)': {
-              '2026-02-26 16:00:00': { '4. close': '210.00' },
-              '2026-02-26 15:55:00': { '4. close': '200.00' },
+            'Time Series (Daily)': {
+              '2026-02-26': { '4. close': '210.00' },
+              '2026-02-25': { '4. close': '200.00' },
             },
           }),
         } as Response;
@@ -477,7 +477,44 @@ describe('fetchUSMarketGainers', () => {
 
     const result = await fetchUSMarketGainers('1D');
 
-    expect(result.source).toBe('UNAVAILABLE');
-    expect(result.stocks).toHaveLength(0);
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(1);
+    expect(result.stocks[0].percentChange).toBeCloseTo(5, 5);
+  });
+
+  it('falls back to top movers rows when US historical fetches fail', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'AAPL', price: '200', change_percentage: '1.2%' },
+              { ticker: 'MSFT', price: '410', change_percentage: '0.9%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_DAILY')) {
+        return {
+          json: async () => ({
+            Note: 'Thank you for using Alpha Vantage',
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1D');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(2);
+    expect(result.stocks[0].ticker).toBe('AAPL');
+    expect(result.stocks[0].percentChange).toBeCloseTo(1.2, 5);
   });
 });

@@ -74,9 +74,9 @@ const toDetailPayload = (
 };
 
 const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<SparklinePoint[]> => {
-    const isIntradayRange = range === '1H' || range === '1D';
-    const endpoint = isIntradayRange
-        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=${range === '1D' ? 'full' : 'compact'}&apikey=${ALPHAVANTAGE_KEY}`
+    const useIntradaySeries = range === '1H';
+    const endpoint = useIntradaySeries
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const res = await fetch(endpoint);
@@ -97,8 +97,8 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
         throw new Error(errorMessage);
     }
 
-    const parsedSeries = isIntradayRange ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    const snapshot = buildHistoricalSnapshot(parsedSeries, range, { requireFullCoverage: true });
+    const parsedSeries = useIntradaySeries ? parseIntradaySeries(payload) : parseDailySeries(payload);
+    const snapshot = buildHistoricalSnapshot(parsedSeries, range);
 
     if (!snapshot || snapshot.sparkline.length < 2) {
         throw new Error(`Insufficient US detail data for ${ticker} in range ${range}`);
