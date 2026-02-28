@@ -3,9 +3,12 @@ import { supabase } from './supabase';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
 const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
+const US_TOP_GAINERS_CACHE_TTL_MS = 60 * 1000;
 const US_ONE_HOUR_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_THREE_MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const US_ONE_HOUR_INTRADAY_REQUEST_LIMIT = 4;
+const US_COMPANY_NAME_LOOKUP_LIMIT = 1;
 
 interface AlphaTopGainerRow {
     ticker: string;
@@ -28,6 +31,7 @@ interface USThreeMonthSnapshot {
 
 let usOneHourCache: { expiresAt: number; stocks: StockData[] } | null = null;
 let usThreeMonthCache: { expiresAt: number; stocks: StockData[] } | null = null;
+let usTopGainersCache: { expiresAt: number; rows: AlphaTopGainerRow[] } | null = null;
 const usCompanyNameCache = new Map<string, { expiresAt: number; companyName: string }>();
 
 const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
@@ -163,13 +167,26 @@ const fetchUSCompanyName = async (ticker: string): Promise<string> => {
     }
 };
 
-const enrichUSStocksWithCompanyNames = async (stocks: StockData[]): Promise<StockData[]> => {
+const enrichUSStocksWithCompanyNames = async (
+    stocks: StockData[],
+    maxLookups: number = US_COMPANY_NAME_LOOKUP_LIMIT,
+): Promise<StockData[]> => {
     const enrichedStocks: StockData[] = [];
+    let lookupCount = 0;
 
     for (const stock of stocks) {
-        const companyName = stock.companyName && stock.companyName !== stock.ticker
-            ? stock.companyName
-            : await fetchUSCompanyName(stock.ticker);
+        const hasResolvedCompanyName = Boolean(stock.companyName && stock.companyName !== stock.ticker);
+        let companyName = stock.companyName || stock.ticker;
+
+        if (!hasResolvedCompanyName) {
+            const cached = usCompanyNameCache.get(stock.ticker.toUpperCase());
+            if (cached && cached.expiresAt > Date.now()) {
+                companyName = cached.companyName;
+            } else if (lookupCount < maxLookups) {
+                companyName = await fetchUSCompanyName(stock.ticker);
+                lookupCount += 1;
+            }
+        }
 
         enrichedStocks.push({
             ...stock,
@@ -178,6 +195,25 @@ const enrichUSStocksWithCompanyNames = async (stocks: StockData[]): Promise<Stoc
     }
 
     return enrichedStocks;
+};
+
+const fetchUSTopGainers = async (): Promise<AlphaTopGainerRow[]> => {
+    if (usTopGainersCache && usTopGainersCache.expiresAt > Date.now()) {
+        return usTopGainersCache.rows;
+    }
+
+    const res = await fetch(`https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`);
+    const data = await res.json() as { top_gainers?: AlphaTopGainerRow[] };
+    const rows = Array.isArray(data.top_gainers) ? data.top_gainers : [];
+
+    if (rows.length > 0) {
+        usTopGainersCache = {
+            rows,
+            expiresAt: Date.now() + US_TOP_GAINERS_CACHE_TTL_MS,
+        };
+    }
+
+    return rows;
 };
 
 const toUSStockFromTopGainer = (item: AlphaTopGainerRow): StockData | null => {
@@ -264,11 +300,17 @@ const fetchUSOneHourGainers = async (candidateTickers: string[]): Promise<{ stoc
         return { stocks: usOneHourCache.stocks, source: 'CACHE' };
     }
 
-    const uniqueTickers = [...new Set(candidateTickers)].slice(0, 12);
+    const uniqueTickers = [...new Set(candidateTickers)];
     const stocks: StockData[] = [];
+    let attempts = 0;
 
     for (const ticker of uniqueTickers) {
+        if (attempts >= US_ONE_HOUR_INTRADAY_REQUEST_LIMIT) {
+            break;
+        }
+
         try {
+            attempts += 1;
             const snapshot = await fetchUSOneHourSnapshot(ticker);
             if (!snapshot) {
                 continue;
@@ -293,18 +335,22 @@ const fetchUSOneHourGainers = async (candidateTickers: string[]): Promise<{ stoc
         .sort((a, b) => b.percentChange - a.percentChange)
         .slice(0, 10);
 
-    const enrichedRanked = ranked.length > 0
-        ? await enrichUSStocksWithCompanyNames(ranked)
-        : ranked;
-
-    if (enrichedRanked.length > 0) {
+    if (ranked.length > 0) {
         usOneHourCache = {
-            stocks: enrichedRanked,
+            stocks: ranked,
             expiresAt: Date.now() + US_ONE_HOUR_CACHE_TTL_MS,
         };
     }
 
-    return { stocks: enrichedRanked, source: 'LIVE' };
+    if (ranked.length > 0) {
+        return { stocks: ranked, source: 'LIVE' };
+    }
+
+    if (usOneHourCache?.stocks.length) {
+        return { stocks: usOneHourCache.stocks, source: 'CACHE' };
+    }
+
+    return { stocks: [], source: 'UNAVAILABLE' };
 };
 
 const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
@@ -342,7 +388,7 @@ const fetchUSThreeMonthGainers = async (candidateTickers: string[]): Promise<{ s
         .slice(0, 10);
 
     const enrichedRanked = ranked.length > 0
-        ? await enrichUSStocksWithCompanyNames(ranked)
+        ? await enrichUSStocksWithCompanyNames(ranked, 0)
         : ranked;
 
     if (enrichedRanked.length > 0) {
@@ -364,22 +410,21 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
     }
 
     try {
-        const res = await fetch(`https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`);
-        const data = await res.json() as { top_gainers?: AlphaTopGainerRow[] };
+        const topGainers = await fetchUSTopGainers();
 
-        if (Array.isArray(data.top_gainers) && data.top_gainers.length > 0) {
+        if (topGainers.length > 0) {
             if (timeframe === '1H') {
-                const hourlyResult = await fetchUSOneHourGainers(data.top_gainers.map((row) => row.ticker));
+                const hourlyResult = await fetchUSOneHourGainers(topGainers.map((row) => row.ticker));
                 if (hourlyResult.stocks.length > 0) {
                     return { stocks: hourlyResult.stocks, source: hourlyResult.source };
                 }
             } else if (timeframe === '3M') {
-                const quarterlyResult = await fetchUSThreeMonthGainers(data.top_gainers.map((row) => row.ticker));
+                const quarterlyResult = await fetchUSThreeMonthGainers(topGainers.map((row) => row.ticker));
                 if (quarterlyResult.stocks.length > 0) {
                     return { stocks: quarterlyResult.stocks, source: quarterlyResult.source };
                 }
             } else {
-                const stocks = data.top_gainers
+                const stocks = topGainers
                     .slice(0, 10)
                     .map((item) => toUSStockFromTopGainer(item))
                     .filter((stock): stock is StockData => stock !== null);
@@ -440,6 +485,13 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
     }
 
     return { stocks: [], source: 'UNAVAILABLE', stale: true };
+};
+
+export const __resetUsApiCachesForTests = (): void => {
+    usOneHourCache = null;
+    usThreeMonthCache = null;
+    usTopGainersCache = null;
+    usCompanyNameCache.clear();
 };
 
 const getMockUSData = (): StockData[] => {

@@ -12,7 +12,7 @@ vi.mock('./supabase', () => ({
   },
 }));
 
-import { fetchARMarketGainers, fetchUSMarketGainers } from './api';
+import { __resetUsApiCachesForTests, fetchARMarketGainers, fetchUSMarketGainers } from './api';
 
 const createCacheQueryChain = (result: unknown) => {
   const limit = vi.fn().mockResolvedValue(result);
@@ -207,6 +207,7 @@ describe('fetchUSMarketGainers (3M)', () => {
   beforeEach(() => {
     (globalThis as Record<string, unknown>).__DEV__ = false;
     vi.restoreAllMocks();
+    __resetUsApiCachesForTests();
   });
 
   it('calculates real 3M performance from daily series and sets companyName fallback', async () => {
@@ -266,9 +267,10 @@ describe('fetchUSMarketGainers', () => {
   beforeEach(() => {
     (globalThis as Record<string, unknown>).__DEV__ = false;
     vi.restoreAllMocks();
+    __resetUsApiCachesForTests();
   });
 
-  it('enriches live US rows with real company names when top gainers omits them', async () => {
+  it('enriches at least one missing US company name without exhausting the request budget', async () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -310,7 +312,57 @@ describe('fetchUSMarketGainers', () => {
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('RSVRW');
     expect(result.stocks[0].companyName).toBe('Reservoir Media, Inc. Warrant');
-    expect(result.stocks[1].companyName).toBe('Avalon GloboCare Corp.');
+    expect(result.stocks[1].companyName).toBe('ALBT');
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('avoids extra company name lookups for 1H so intraday data can still load', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'AAPL', price: '200', change_percentage: '1.2%' },
+              { ticker: 'MSFT', price: '410', change_percentage: '0.9%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=AAPL')) {
+        return {
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '210.00' },
+              '2026-02-26 15:00:00': { '4. close': '200.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=MSFT')) {
+        return {
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '418.20' },
+              '2026-02-26 15:00:00': { '4. close': '410.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1H');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(2);
+    expect(result.stocks[0].ticker).toBe('AAPL');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('function=OVERVIEW'))).toBe(false);
   });
 });
