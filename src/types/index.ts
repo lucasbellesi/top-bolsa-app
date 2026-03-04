@@ -24,6 +24,7 @@ export interface StockRankingData {
     stocks: StockData[];
     source: DataSourceType;
     stale?: boolean;
+    lastUpdatedAt?: string;
 }
 
 export interface StockDetailData {

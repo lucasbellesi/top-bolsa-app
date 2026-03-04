@@ -31,7 +31,7 @@ interface AlphaTopMoversResponse {
 }
 
 let usTopMoversCache: { expiresAt: number; rows: AlphaTopGainerRow[] } | null = null;
-const usRankingCache = new Map<TimeframeType, { expiresAt: number; stocks: StockData[] }>();
+const usRankingCache = new Map<TimeframeType, { expiresAt: number; stocks: StockData[]; lastUpdatedAt?: string }>();
 const usCompanyNameCache = new Map<string, { expiresAt: number; companyName: string }>();
 
 const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
@@ -119,6 +119,23 @@ const buildFallbackUSStock = (row: AlphaTopGainerRow): StockData | null => {
         percentChange,
         sparkline: buildFallbackSparkline(price, percentChange),
     };
+};
+
+const getLatestSparklineTimestamp = (stocks: StockData[]): string | undefined => {
+    const latestTimestamp = stocks.reduce<number | null>((latest, stock) => {
+        const stockLatest = stock.sparkline[stock.sparkline.length - 1]?.timestamp;
+        if (!Number.isFinite(stockLatest)) {
+            return latest;
+        }
+
+        if (latest === null || (stockLatest as number) > latest) {
+            return stockLatest as number;
+        }
+
+        return latest;
+    }, null);
+
+    return latestTimestamp === null ? undefined : new Date(latestTimestamp).toISOString();
 };
 
 const fetchYahooCompanyName = async (ticker: string): Promise<string | null> => {
@@ -273,6 +290,10 @@ const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeTyp
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const response = await fetch(endpoint);
+    if (response.ok === false) {
+        throw new Error(`Alpha Vantage request failed with status ${response.status}`);
+    }
+
     const payload = await response.json() as Record<string, unknown>;
 
     if (isAlphaVantageError(payload)) {
@@ -280,16 +301,16 @@ const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeTyp
     }
 
     const series = useIntradaySeries ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    return buildHistoricalSnapshot(series, timeframe);
+    return buildHistoricalSnapshot(series, timeframe, { requireFullCoverage: true });
 };
 
 const fetchUSRankingByTimeframe = async (
     timeframe: TimeframeType,
     candidateRows: AlphaTopGainerRow[],
-): Promise<{ stocks: StockData[]; source: DataSourceType }> => {
+): Promise<{ stocks: StockData[]; source: DataSourceType; lastUpdatedAt?: string }> => {
     const cached = usRankingCache.get(timeframe);
     if (cached && cached.expiresAt > Date.now()) {
-        return { stocks: cached.stocks, source: 'CACHE' };
+        return { stocks: cached.stocks, source: 'CACHE', lastUpdatedAt: cached.lastUpdatedAt };
     }
 
     const isIntradayRange = timeframe === '1H';
@@ -328,7 +349,7 @@ const fetchUSRankingByTimeframe = async (
         .sort((a, b) => b.percentChange - a.percentChange)
         .slice(0, 10);
 
-    if (ranked.length < 10) {
+    if (timeframe === '1D' && ranked.length < 10) {
         const existingTickers = new Set(ranked.map((stock) => stock.ticker.toUpperCase()));
         const fallbackStocks = candidateRows
             .filter((row) => !existingTickers.has(row.ticker.toUpperCase()))
@@ -344,15 +365,17 @@ const fetchUSRankingByTimeframe = async (
         : ranked;
 
     if (enrichedRanked.length > 0) {
+        const lastUpdatedAt = getLatestSparklineTimestamp(enrichedRanked);
         usRankingCache.set(timeframe, {
             stocks: enrichedRanked,
             expiresAt: Date.now() + US_RANKING_CACHE_TTL_MS,
+            lastUpdatedAt,
         });
-        return { stocks: enrichedRanked, source: 'LIVE' };
+        return { stocks: enrichedRanked, source: 'LIVE', lastUpdatedAt };
     }
 
     if (cached?.stocks.length) {
-        return { stocks: cached.stocks, source: 'CACHE' };
+        return { stocks: cached.stocks, source: 'CACHE', lastUpdatedAt: cached.lastUpdatedAt };
     }
 
     return { stocks: [], source: 'UNAVAILABLE' };
@@ -361,7 +384,7 @@ const fetchUSRankingByTimeframe = async (
 export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
     const cached = usRankingCache.get(timeframe);
     if (cached && cached.expiresAt > Date.now()) {
-        return { stocks: cached.stocks, source: 'CACHE' };
+        return { stocks: cached.stocks, source: 'CACHE', lastUpdatedAt: cached.lastUpdatedAt };
     }
 
     try {
@@ -387,7 +410,7 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
 export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
     if (supabase) {
         try {
-            const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean }>(
+            const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean; lastUpdatedAt?: string }>(
                 'fetch-argentina-market',
                 {
                     body: { timeframe },
@@ -399,6 +422,7 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
                     stocks: data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10),
                     source: mapFunctionSourceToUiSource(data.source),
                     stale: data.stale ?? false,
+                    lastUpdatedAt: data.lastUpdatedAt,
                 };
             }
 
@@ -413,8 +437,8 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
     }
 
     const cached = await fetchArgentinaFromCache(timeframe);
-    if (cached.length > 0) {
-        return { stocks: cached, source: 'CACHE', stale: true };
+    if (cached.stocks.length > 0) {
+        return { stocks: cached.stocks, source: 'CACHE', stale: true, lastUpdatedAt: cached.lastUpdatedAt };
     }
 
     if (shouldUseMockFallback()) {
@@ -464,17 +488,20 @@ interface ArgentinaCacheRow {
     price: number;
     percent_change: number;
     sparkline: SparklinePoint[] | null;
+    cached_at?: string;
 }
 
-const fetchArgentinaFromCache = async (timeframe: TimeframeType): Promise<StockData[]> => {
+const fetchArgentinaFromCache = async (
+    timeframe: TimeframeType
+): Promise<{ stocks: StockData[]; lastUpdatedAt?: string }> => {
     if (!supabase) {
-        return [];
+        return { stocks: [] };
     }
 
     try {
         const { data, error } = await supabase
             .from('argentina_market_cache')
-            .select('ticker,market,company_name,price,percent_change,sparkline')
+            .select('ticker,market,company_name,price,percent_change,sparkline,cached_at')
             .eq('timeframe', timeframe)
             .order('percent_change', { ascending: false })
             .limit(10);
@@ -483,10 +510,11 @@ const fetchArgentinaFromCache = async (timeframe: TimeframeType): Promise<StockD
             if (error) {
                 console.warn('Argentina market cache read failed:', error.message);
             }
-            return [];
+            return { stocks: [] };
         }
 
-        return (data as ArgentinaCacheRow[])
+        const rows = (data as ArgentinaCacheRow[]);
+        const stocks = rows
             .map((row) => ({
                 id: row.ticker,
                 ticker: row.ticker,
@@ -499,9 +527,24 @@ const fetchArgentinaFromCache = async (timeframe: TimeframeType): Promise<StockD
             .filter((row) => Number.isFinite(row.price) && Number.isFinite(row.percentChange))
             .sort((a, b) => b.percentChange - a.percentChange)
             .slice(0, 10);
+        const lastUpdatedAt = rows.reduce<string | undefined>((latest, row) => {
+            if (!row.cached_at) {
+                return latest;
+            }
+
+            if (!latest) {
+                return row.cached_at;
+            }
+
+            return new Date(row.cached_at).getTime() > new Date(latest).getTime()
+                ? row.cached_at
+                : latest;
+        }, undefined);
+
+        return { stocks, lastUpdatedAt };
     } catch (error) {
         console.warn('Argentina market cache fallback failed:', error);
-        return [];
+        return { stocks: [] };
     }
 };
 

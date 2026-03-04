@@ -219,6 +219,30 @@ const normalizedSparkline = (
   return [{ timestamp: Date.now(), value: fallbackPrice }];
 };
 
+const getLatestStockTimestamp = (stocks: StockData[]): string =>
+  new Date(
+    stocks.reduce((latest, stock) => {
+      const stockLatest = stock.sparkline[stock.sparkline.length - 1]?.timestamp;
+      return typeof stockLatest === "number" && Number.isFinite(stockLatest) && stockLatest > latest
+        ? stockLatest
+        : latest;
+    }, Date.now()),
+  ).toISOString();
+
+const getLatestCacheTimestamp = (rows: ArgentinaCacheRow[]): string | undefined =>
+  rows.reduce<string | undefined>((latest, row) => {
+    const candidate = new Date(row.cached_at).getTime();
+    if (!Number.isFinite(candidate)) {
+      return latest;
+    }
+
+    if (!latest) {
+      return row.cached_at;
+    }
+
+    return candidate > new Date(latest).getTime() ? row.cached_at : latest;
+  }, undefined);
+
 const computePercentFromHistory = (
   historicalRows: Array<{ close?: number; date?: Date }>,
   currentPrice: number,
@@ -237,23 +261,22 @@ const computePercentFromHistory = (
 const computePercentFromOneHourWindow = (
   historicalRows: Array<{ close?: number; date?: Date }>,
   currentPrice: number,
-): number => {
+): number | null => {
   const points = historicalRows
     .filter((row) => row.date instanceof Date && isFiniteNumber(row.close) && row.close > 0)
     .map((row) => ({ ts: (row.date as Date).getTime(), close: row.close as number }))
     .sort((a, b) => a.ts - b.ts);
 
   if (points.length === 0) {
-    return 0;
+    return null;
   }
 
   const latestTs = points[points.length - 1].ts;
   const oneHourAgoTs = latestTs - 60 * 60 * 1000;
-  const baseline =
-    [...points].reverse().find((point) => point.ts <= oneHourAgoTs) ?? points[0];
+  const baseline = [...points].reverse().find((point) => point.ts <= oneHourAgoTs);
 
-  if (!isFiniteNumber(baseline.close) || baseline.close <= 0) {
-    return 0;
+  if (!baseline || !isFiniteNumber(baseline.close) || baseline.close <= 0) {
+    return null;
   }
 
   return ((currentPrice - baseline.close) / baseline.close) * 100;
@@ -354,6 +377,18 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
     }
 
     const sparkline = normalizedSparkline(historical, priceCandidate);
+    if (timeframe !== "1D" && sparkline.length < 2) {
+      return {
+        stock: null,
+        trace: {
+          ticker,
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          reason: "insufficient_history",
+        },
+      };
+    }
+
     const companyNameCandidate =
       (typeof quote.longName === "string" && quote.longName.trim().length > 0
         ? quote.longName
@@ -362,10 +397,22 @@ const fetchTicker = async (ticker: string, timeframe: TimeframeType): Promise<Ti
           : ticker).trim();
 
     const computedOneHourChange = computePercentFromOneHourWindow(historical, priceCandidate);
+    if (timeframe === "1H" && computedOneHourChange === null) {
+      return {
+        stock: null,
+        trace: {
+          ticker,
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          reason: "insufficient_1h_history",
+        },
+      };
+    }
+
     const percentChange = timeframe === "1D" && isFiniteNumber(quote.regularMarketChangePercent)
       ? quote.regularMarketChangePercent
       : timeframe === "1H"
-      ? (historical.length > 0 ? computedOneHourChange : isFiniteNumber(quote.regularMarketChangePercent) ? quote.regularMarketChangePercent : 0)
+      ? (computedOneHourChange ?? 0)
       : (historical.length > 0 ? computePercentFromHistory(historical, priceCandidate) : isFiniteNumber(quote.regularMarketChangePercent) ? quote.regularMarketChangePercent : 0);
 
     return {
@@ -505,6 +552,7 @@ Deno.serve(async (req) => {
       source: "cache",
       timeframe,
       stocks: mapCacheRowsToStocks(cachedRows, requestedTicker ? 1 : 10),
+      lastUpdatedAt: getLatestCacheTimestamp(cachedRows),
       requestId,
     });
   }
@@ -557,6 +605,7 @@ Deno.serve(async (req) => {
       source: "live",
       timeframe,
       stocks: liveStocks,
+      lastUpdatedAt: getLatestStockTimestamp(liveStocks),
       requestId,
     });
   } catch (error) {
@@ -581,6 +630,7 @@ Deno.serve(async (req) => {
         stale: true,
         timeframe,
         stocks: mapCacheRowsToStocks(cachedRows, requestedTicker ? 1 : 10),
+        lastUpdatedAt: getLatestCacheTimestamp(cachedRows),
         requestId,
       });
     }

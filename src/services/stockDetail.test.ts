@@ -52,8 +52,10 @@ describe('stock detail helpers', () => {
     });
 
     it('maps AR edge-function response to stock detail payload', () => {
+        const lastUpdatedAt = '2026-03-01T12:30:00.000Z';
         const result = mapEdgeFunctionStockToDetail({
             source: 'cache_fallback',
+            lastUpdatedAt,
             stocks: [
                 {
                     id: 'GGAL',
@@ -73,6 +75,7 @@ describe('stock detail helpers', () => {
         expect(result?.ticker).toBe('GGAL');
         expect(result?.market).toBe('AR');
         expect(result?.source).toBe('CACHE');
+        expect(result?.lastUpdatedAt).toBe(lastUpdatedAt);
         expect(result?.series.length).toBeGreaterThan(0);
     });
 });

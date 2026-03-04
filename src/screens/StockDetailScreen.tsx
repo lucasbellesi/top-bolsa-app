@@ -46,8 +46,7 @@ export const StockDetailScreen = ({ route }: Props) => {
         isError,
         isFetching,
         refetch,
-        dataUpdatedAt,
-    } = useStockDetail(ticker, market, range, currency);
+    } = useStockDetail(ticker, market, range);
     const {
         data: companyProfile,
         isLoading: isProfileLoading,
@@ -131,7 +130,8 @@ export const StockDetailScreen = ({ route }: Props) => {
     const startValue = series[0]?.value ?? displayData.price;
     const endValue = series[series.length - 1]?.value ?? displayData.price;
 
-    const updateTimestamp = dataUpdatedAt || new Date(displayData.lastUpdatedAt).getTime();
+    const parsedUpdateTimestamp = new Date(displayData.lastUpdatedAt).getTime();
+    const updateTimestamp = Number.isFinite(parsedUpdateTimestamp) ? parsedUpdateTimestamp : Date.now();
     const handleRangeSelect = (nextRange: DetailRangeType) => {
         setRange(nextRange);
         AccessibilityInfo.announceForAccessibility(`Detail range set to ${nextRange}`);

@@ -23,6 +23,7 @@ interface AlphaVantageErrorResponse {
 interface EdgeFunctionResponse {
     source?: string;
     stale?: boolean;
+    lastUpdatedAt?: string;
     stocks?: StockData[];
 }
 
@@ -60,6 +61,7 @@ const toDetailPayload = (
 ): StockDetailData => {
     const normalizedSeries = [...series].sort((a, b) => a.timestamp - b.timestamp);
     const price = normalizedSeries[normalizedSeries.length - 1]?.value ?? 0;
+    const lastPointTimestamp = normalizedSeries[normalizedSeries.length - 1]?.timestamp;
 
     return {
         ticker: ticker.toUpperCase(),
@@ -69,7 +71,9 @@ const toDetailPayload = (
         series: normalizedSeries,
         range,
         source,
-        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedAt: Number.isFinite(lastPointTimestamp)
+            ? new Date(lastPointTimestamp as number).toISOString()
+            : new Date().toISOString(),
     };
 };
 
@@ -80,7 +84,7 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
     const res = await fetch(endpoint);
-    if (!res.ok) {
+    if (res.ok === false) {
         throw new Error(`Alpha Vantage request failed with status ${res.status}`);
     }
 
@@ -98,7 +102,7 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
     }
 
     const parsedSeries = useIntradaySeries ? parseIntradaySeries(payload) : parseDailySeries(payload);
-    const snapshot = buildHistoricalSnapshot(parsedSeries, range);
+    const snapshot = buildHistoricalSnapshot(parsedSeries, range, { requireFullCoverage: true });
 
     if (!snapshot || snapshot.sparkline.length < 2) {
         throw new Error(`Insufficient US detail data for ${ticker} in range ${range}`);
@@ -133,7 +137,8 @@ export const mapEdgeFunctionStockToDetail = (
         series,
         range,
         source: mapFunctionSourceToUiSource(payload.source),
-        lastUpdatedAt: new Date().toISOString(),
+        lastUpdatedAt: payload.lastUpdatedAt
+            || new Date(series[series.length - 1]?.timestamp ?? Date.now()).toISOString(),
     };
 };
 

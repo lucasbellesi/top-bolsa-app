@@ -52,13 +52,14 @@ export const HomeScreen = () => {
         isError,
         isFetching,
         refetch,
-        dataUpdatedAt,
     } = useStockRanking(market, timeframe);
 
     const stocks = rankingData?.stocks ?? [];
     const source: DataSourceType = rankingData?.source ?? 'UNAVAILABLE';
     const freshness = mapSourceToFreshness(source, rankingData?.stale);
     const sourceHint = getSourceHint(source, rankingData?.stale);
+    const parsedLastUpdatedAt = rankingData?.lastUpdatedAt ? new Date(rankingData.lastUpdatedAt).getTime() : null;
+    const lastUpdatedAt = parsedLastUpdatedAt !== null && Number.isFinite(parsedLastUpdatedAt) ? parsedLastUpdatedAt : null;
 
     const nativeCurrency = getNativeCurrencyForMarket(market);
     const needsFxConversion = currency !== nativeCurrency;
@@ -134,9 +135,9 @@ export const HomeScreen = () => {
                             {source.toUpperCase()}
                         </Text>
                     </View>
-                    {dataUpdatedAt ? (
+                    {lastUpdatedAt ? (
                         <Text className="text-xs" style={{ color: tokens.textMuted }}>
-                            Last update: {formatClockTime(dataUpdatedAt)}
+                            Last update: {formatClockTime(lastUpdatedAt)}
                         </Text>
                     ) : null}
                     {isFetching && displayStocks.length > 0 ? (
@@ -217,7 +218,7 @@ export const HomeScreen = () => {
                             index={index}
                             currency={effectiveCurrency}
                             freshness={freshness}
-                            lastUpdatedAt={dataUpdatedAt || undefined}
+                            lastUpdatedAt={lastUpdatedAt || undefined}
                             onPress={() =>
                                 navigation.navigate('StockDetail', {
                                     ticker: item.ticker,

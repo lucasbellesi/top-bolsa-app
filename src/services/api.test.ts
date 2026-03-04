@@ -42,6 +42,7 @@ describe('fetchARMarketGainers', () => {
     mockInvoke.mockResolvedValue({
       data: {
         source: 'live',
+        lastUpdatedAt: '2026-03-01T15:30:00.000Z',
         stocks: [
           {
             id: 'EDN',
@@ -67,6 +68,7 @@ describe('fetchARMarketGainers', () => {
     const result = await fetchARMarketGainers('1D');
 
     expect(result.source).toBe('LIVE');
+    expect(result.lastUpdatedAt).toBe('2026-03-01T15:30:00.000Z');
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('EDN');
     expect(mockInvoke).toHaveBeenCalledWith(
@@ -144,6 +146,7 @@ describe('fetchARMarketGainers', () => {
           price: 3100,
           percent_change: 2.5,
           sparkline: [],
+          cached_at: '2026-03-01T10:00:00.000Z',
         },
         {
           ticker: 'PAMP',
@@ -151,6 +154,7 @@ describe('fetchARMarketGainers', () => {
           price: 5300,
           percent_change: 1.2,
           sparkline: [],
+          cached_at: '2026-03-01T11:00:00.000Z',
         },
       ],
       error: null,
@@ -162,6 +166,7 @@ describe('fetchARMarketGainers', () => {
 
     expect(result.source).toBe('CACHE');
     expect(result.stale).toBe(true);
+    expect(result.lastUpdatedAt).toBe('2026-03-01T11:00:00.000Z');
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('SUPV');
     expect(mockFrom).toHaveBeenCalledWith('argentina_market_cache');
@@ -258,6 +263,7 @@ describe('fetchUSMarketGainers (3M)', () => {
     expect(result.stocks[0].ticker).toBe('NVDA');
     expect(result.stocks[0].companyName).toBe('NVIDIA Corporation');
     expect(result.stocks[0].percentChange).toBeCloseTo(20, 5);
+    expect(result.lastUpdatedAt).toBe('2026-02-26T00:00:00.000Z');
     expect(result.stocks[1].companyName).toBe('Apple Inc.');
     expect(fetchMock).toHaveBeenCalled();
   });
@@ -516,5 +522,58 @@ describe('fetchUSMarketGainers', () => {
     expect(result.stocks).toHaveLength(2);
     expect(result.stocks[0].ticker).toBe('AAPL');
     expect(result.stocks[0].percentChange).toBeCloseTo(1.2, 5);
+  });
+
+  it('does not inject fallback day-change rows into 1H rankings when intraday coverage is incomplete', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('function=TOP_GAINERS_LOSERS')) {
+        return {
+          ok: true,
+          json: async () => ({
+            top_gainers: [
+              { ticker: 'AAPL', price: '200', change_percentage: '12%' },
+              { ticker: 'MSFT', price: '410', change_percentage: '11%' },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=AAPL')) {
+        return {
+          ok: true,
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '210.00' },
+              '2026-02-26 15:00:00': { '4. close': '200.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes('function=TIME_SERIES_INTRADAY') && url.includes('symbol=MSFT')) {
+        return {
+          ok: true,
+          json: async () => ({
+            'Time Series (5min)': {
+              '2026-02-26 16:00:00': { '4. close': '418.20' },
+              '2026-02-26 15:40:00': { '4. close': '410.00' },
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const result = await fetchUSMarketGainers('1H');
+
+    expect(result.source).toBe('LIVE');
+    expect(result.stocks).toHaveLength(1);
+    expect(result.stocks[0].ticker).toBe('AAPL');
   });
 });
