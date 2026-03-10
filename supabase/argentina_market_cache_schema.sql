@@ -1,3 +1,4 @@
+-- snapshot-source-migration: 20260226024000
 -- Cache table for BYMA data fetched via yahoo-finance2 in Supabase Edge Functions
 create table if not exists public.argentina_market_cache (
   ticker text not null,

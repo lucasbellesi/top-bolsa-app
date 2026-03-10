@@ -100,6 +100,19 @@ select public.warm_argentina_market_cache();
 The migration `20260225020407_schedule_argentina_cache_warmup.sql` schedules cron job `warm-argentina-market-cache` every 5 minutes.
 The migration `20260225213000_add_1h_timeframe_support.sql` adds `1H` support in cache + warm-up.
 
+## Verification
+
+- Run full local verification:
+```bash
+npm run verify
+```
+- Supabase snapshot parity only:
+```bash
+npm run check:supabase-schema
+```
+
+If Supabase env vars are missing, the app runs in degraded mode and logs a `[SUPABASE_DEGRADED_MODE]` warning with missing keys.
+
 ## Run
 
 Android (recommended):
