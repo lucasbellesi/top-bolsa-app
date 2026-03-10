@@ -1,5 +1,5 @@
 import { CompanyProfileData, DataSourceType, MarketType } from '../types';
-import { supabase } from './supabase';
+import { supabase, supabaseConfigStatus } from './supabase';
 
 const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
 const COMPANY_PROFILE_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -184,6 +184,7 @@ const fetchARCompanyProfile = async (
     }
 
     if (!supabase) {
+        console.warn('[SUPABASE_DEGRADED_MODE]', supabaseConfigStatus.message);
         const cached = getCachedProfile('AR', normalizedTicker);
         if (cached) {
             return { ...cached, source: 'CACHE' };

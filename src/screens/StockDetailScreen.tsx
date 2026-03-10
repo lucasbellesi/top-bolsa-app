@@ -75,8 +75,9 @@ export const StockDetailScreen = ({ route }: Props) => {
     }, [data, conversionFactor]);
 
     const source = displayData?.source ?? 'UNAVAILABLE';
-    const freshness = mapSourceToFreshness(source, source === 'CACHE');
-    const sourceHint = getSourceHint(source, source === 'CACHE');
+    const isStale = displayData?.stale ?? (source === 'CACHE');
+    const freshness = mapSourceToFreshness(source, isStale);
+    const sourceHint = getSourceHint(source, isStale);
 
     const sourceBadgeStyle: Record<DataSourceType, { bg: string; border: string; text: string }> = {
         LIVE: { bg: `${tokens.positive}26`, border: `${tokens.positive}66`, text: tokens.positive },

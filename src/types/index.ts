@@ -35,6 +35,7 @@ export interface StockDetailData {
     series: SparklinePoint[];
     range: DetailRangeType;
     source: DataSourceType;
+    stale?: boolean;
     lastUpdatedAt: string;
 }
 

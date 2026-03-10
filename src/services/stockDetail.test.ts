@@ -3,6 +3,12 @@ import { SparklinePoint } from '../types';
 
 vi.mock('./supabase', () => ({
     supabase: null,
+    supabaseConfigStatus: {
+        mode: 'degraded',
+        isConfigured: false,
+        missingEnv: ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY'],
+        message: 'Supabase is not configured.',
+    },
 }));
 
 import { computePercentChangeFromSeries, mapEdgeFunctionStockToDetail, sliceSeriesByDetailRange } from './stockDetail';
@@ -55,6 +61,7 @@ describe('stock detail helpers', () => {
         const lastUpdatedAt = '2026-03-01T12:30:00.000Z';
         const result = mapEdgeFunctionStockToDetail({
             source: 'cache_fallback',
+            stale: true,
             lastUpdatedAt,
             stocks: [
                 {
@@ -75,7 +82,31 @@ describe('stock detail helpers', () => {
         expect(result?.ticker).toBe('GGAL');
         expect(result?.market).toBe('AR');
         expect(result?.source).toBe('CACHE');
+        expect(result?.stale).toBe(true);
         expect(result?.lastUpdatedAt).toBe(lastUpdatedAt);
         expect(result?.series.length).toBeGreaterThan(0);
+    });
+
+    it('defaults stale flag to false when edge payload omits it', () => {
+        const result = mapEdgeFunctionStockToDetail({
+            source: 'live',
+            stocks: [
+                {
+                    id: 'PAMP',
+                    ticker: 'PAMP',
+                    market: 'AR',
+                    price: 3000,
+                    percentChange: 1.1,
+                    sparkline: [
+                        { timestamp: Date.now() - 3600000, value: 2950 },
+                        { timestamp: Date.now(), value: 3000 },
+                    ],
+                },
+            ],
+        }, 'PAMP', '1H');
+
+        expect(result).not.toBeNull();
+        expect(result?.source).toBe('LIVE');
+        expect(result?.stale).toBe(false);
     });
 });

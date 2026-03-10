@@ -1,5 +1,5 @@
 import { DataSourceType, MarketType, TimeframeType, StockData, SparklinePoint, StockRankingData } from '../types';
-import { supabase } from './supabase';
+import { supabase, supabaseConfigStatus } from './supabase';
 import {
     buildHistoricalSnapshot,
     isAlphaVantageError,
@@ -433,7 +433,7 @@ export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<St
             console.warn('Argentina market edge function invocation failed:', error);
         }
     } else {
-        console.warn('Supabase client is not configured. Falling back to cache/mock data.');
+        console.warn('[SUPABASE_DEGRADED_MODE]', supabaseConfigStatus.message);
     }
 
     const cached = await fetchArgentinaFromCache(timeframe);
@@ -477,7 +477,10 @@ const mapFunctionSourceToUiSource = (source?: string): DataSourceType => {
         case 'cache_fallback':
             return 'CACHE';
         default:
-            return 'CACHE';
+            if (source) {
+                console.warn('Unknown Argentina market source from edge function:', source);
+            }
+            return 'UNAVAILABLE';
     }
 };
 
