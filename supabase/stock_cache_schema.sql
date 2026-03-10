@@ -1,3 +1,4 @@
+-- snapshot-source-migration: none
 -- Create the stock_cache table
 create table public.stock_cache (
   id uuid default gen_random_uuid() primary key,

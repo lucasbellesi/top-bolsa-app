@@ -1,5 +1,5 @@
 import { DataSourceType, DetailRangeType, MarketType, SparklinePoint, StockData, StockDetailData } from '../types';
-import { supabase } from './supabase';
+import { supabase, supabaseConfigStatus } from './supabase';
 import {
     buildHistoricalSnapshot,
     computePercentChangeFromSeries,
@@ -137,6 +137,7 @@ export const mapEdgeFunctionStockToDetail = (
         series,
         range,
         source: mapFunctionSourceToUiSource(payload.source),
+        stale: payload.stale ?? false,
         lastUpdatedAt: payload.lastUpdatedAt
             || new Date(series[series.length - 1]?.timestamp ?? Date.now()).toISOString(),
     };
@@ -144,7 +145,7 @@ export const mapEdgeFunctionStockToDetail = (
 
 const fetchARDetail = async (ticker: string, range: DetailRangeType): Promise<StockDetailData> => {
     if (!supabase) {
-        throw new Error('Supabase client is not configured');
+        throw new Error(supabaseConfigStatus.message);
     }
 
     const { data, error } = await supabase.functions.invoke<EdgeFunctionResponse>('fetch-argentina-market', {

@@ -10,6 +10,12 @@ vi.mock('./supabase', () => ({
     },
     from: (...args: unknown[]) => mockFrom(...args),
   },
+  supabaseConfigStatus: {
+    mode: 'configured',
+    isConfigured: true,
+    missingEnv: [],
+    message: 'Supabase is configured.',
+  },
 }));
 
 import { __resetUsApiCachesForTests, fetchARMarketGainers, fetchUSMarketGainers } from './api';
@@ -130,6 +136,33 @@ describe('fetchARMarketGainers', () => {
     expect(result.stale).toBe(true);
     expect(result.stocks).toHaveLength(1);
     expect(result.stocks[0].ticker).toBe('GGAL');
+  });
+
+  it('returns UNAVAILABLE when edge function sends unknown source value', async () => {
+    mockInvoke.mockResolvedValue({
+      data: {
+        source: 'unexpected_source',
+        stocks: [
+          {
+            id: 'GGAL',
+            ticker: 'GGAL',
+            market: 'AR',
+            price: 4500,
+            percentChange: 1.2,
+            sparkline: [],
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const result = await fetchARMarketGainers('1W');
+
+    expect(result.source).toBe('UNAVAILABLE');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Unknown Argentina market source from edge function:',
+      'unexpected_source',
+    );
   });
 
   it('falls back to cache table when edge function returns an error', async () => {

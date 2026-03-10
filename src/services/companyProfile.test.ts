@@ -8,6 +8,12 @@ vi.mock('./supabase', () => ({
       invoke: (...args: unknown[]) => mockInvoke(...args),
     },
   },
+  supabaseConfigStatus: {
+    mode: 'configured',
+    isConfigured: true,
+    missingEnv: [],
+    message: 'Supabase is configured.',
+  },
 }));
 
 import { __resetCompanyProfileCacheForTests, fetchCompanyProfile } from './companyProfile';
