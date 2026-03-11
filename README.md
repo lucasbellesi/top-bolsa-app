@@ -22,13 +22,18 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 
 US (`fetchUSMarketGainers`)
 - Source: Alpha Vantage (`TOP_GAINERS_LOSERS`)
-- Fallback: local mock data
+- Fallback chain: ranked cache -> (dev/opt-in) local mock -> `UNAVAILABLE`
 
 Argentina (`fetchARMarketGainers`)
 - 1st attempt: Supabase Edge Function `fetch-argentina-market`
 - Edge Function source: `yahoo-finance2` using BYMA symbols with `.BA` suffix
 - Cache write/read table: `public.argentina_market_cache`
-- App fallback chain: edge function -> cache table -> local mock
+- App fallback chain: edge function -> cache table -> (dev/opt-in) local mock -> `UNAVAILABLE`
+
+Argentina company profile (`fetchCompanyProfile` for `AR`)
+- 1st attempt: Supabase Edge Function `fetch-argentina-company-profile`
+- Cache write/read table: `public.argentina_company_profile_cache`
+- App fallback chain: edge function -> in-memory cache/minimal profile
 
 ## Stack
 
@@ -73,14 +78,16 @@ supabase link --project-ref <your-project-ref>
 supabase db push --include-all
 ```
 
-5. Deploy BYMA function
+5. Deploy Supabase Edge Functions
 ```bash
 supabase functions deploy fetch-argentina-market
+supabase functions deploy fetch-argentina-company-profile
 ```
 
-6. Configure cache TTL (optional)
+6. Configure cache TTLs (optional)
 ```bash
 supabase secrets set ARGENTINA_CACHE_TTL_SECONDS=300
+supabase secrets set ARGENTINA_COMPANY_PROFILE_CACHE_TTL_SECONDS=86400
 ```
 
 7. Configure BYMA warm-up scheduler values (required once)
@@ -111,6 +118,9 @@ npm run verify
 npm run check:supabase-schema
 ```
 
+- CI workflow:
+  - `.github/workflows/verify.yml` runs `npm run verify` for pull requests to `main` and pushes to `main`
+
 If Supabase env vars are missing, the app runs in degraded mode and logs a `[SUPABASE_DEGRADED_MODE]` warning with missing keys.
 
 ## Run
@@ -132,8 +142,11 @@ npm run start
 - App fetch logic: `src/services/api.ts`
 - Supabase client: `src/services/supabase.ts`
 - Edge function: `supabase/functions/fetch-argentina-market/index.ts`
+- Edge function: `supabase/functions/fetch-argentina-company-profile/index.ts`
 - Cache schema: `supabase/argentina_market_cache_schema.sql`
+- Cache schema: `supabase/argentina_company_profile_cache_schema.sql`
 - Migration (applied): `supabase/migrations/20260225014841_argentina_market_cache.sql`
+- Migration (applied): `supabase/migrations/20260310185000_harden_argentina_company_profile_cache_rls.sql`
 - Privacy policy template: `PRIVACY_POLICY.md`
 
 ## Legal & Play Store Checklist
