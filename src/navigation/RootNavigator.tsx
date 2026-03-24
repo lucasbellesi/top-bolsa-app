@@ -20,11 +20,7 @@ export const RootNavigator = () => {
                 contentStyle: { backgroundColor: tokens.bgPrimary },
             }}
         >
-            <Stack.Screen
-                name="Home"
-                component={HomeScreen}
-                options={{ headerShown: false }}
-            />
+            <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
             <Stack.Screen
                 name="StockDetail"
                 component={StockDetailScreen}

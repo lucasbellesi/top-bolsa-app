@@ -6,7 +6,7 @@ export const getNativeCurrencyForMarket = (market: MarketType): CurrencyType =>
 export const getConversionFactor = (
     market: MarketType,
     selectedCurrency: CurrencyType,
-    usdToArsRate: number | null
+    usdToArsRate: number | null,
 ): number | null => {
     const nativeCurrency = getNativeCurrencyForMarket(market);
     if (selectedCurrency === nativeCurrency) {

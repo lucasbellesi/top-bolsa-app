@@ -11,7 +11,7 @@ export const StockDetailSkeleton = () => {
             Animated.sequence([
                 Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
                 Animated.timing(pulse, { toValue: 0.55, duration: 700, useNativeDriver: true }),
-            ])
+            ]),
         ).start();
     }, [pulse]);
 

@@ -1,4 +1,14 @@
-import { DataSourceType, DetailRangeType, MarketType, SparklinePoint, StockData, StockDetailData } from '../types';
+import { appConfig } from '@core/config/env';
+import { fetchJson } from '@core/network/fetchJson';
+import { mapRemoteSourceToUiSource } from '@services/shared/source';
+import type {
+    DataSourceType,
+    DetailRangeType,
+    MarketType,
+    SparklinePoint,
+    StockData,
+    StockDetailData,
+} from '../types';
 import { supabase, supabaseConfigStatus } from './supabase';
 import {
     buildHistoricalSnapshot,
@@ -11,14 +21,8 @@ import {
 
 export { computePercentChangeFromSeries } from './series';
 
-const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
+const ALPHAVANTAGE_KEY = appConfig.stockApiKey;
 const DETAIL_CACHE_TTL_MS = 60 * 1000;
-
-interface AlphaVantageErrorResponse {
-  Note?: string;
-  Information?: string;
-  ['Error Message']?: string;
-}
 
 interface EdgeFunctionResponse {
     source?: string;
@@ -32,24 +36,10 @@ const detailCache = new Map<string, { expiresAt: number; data: StockDetailData }
 const getDetailCacheKey = (market: MarketType, ticker: string, range: DetailRangeType) =>
     `${market}:${ticker.toUpperCase()}:${range}`;
 
-const mapFunctionSourceToUiSource = (source?: string): DataSourceType => {
-    switch ((source || '').toLowerCase()) {
-        case 'live':
-            return 'LIVE';
-        case 'cache':
-        case 'cache_fallback':
-            return 'CACHE';
-        case 'mock':
-            return 'MOCK';
-        default:
-            return 'UNAVAILABLE';
-    }
-};
-
 export const sliceSeriesByDetailRange = (
     series: SparklinePoint[],
     range: DetailRangeType,
-    referenceTimestamp?: number
+    referenceTimestamp?: number,
 ): SparklinePoint[] => sliceSeriesByRange(series, range, referenceTimestamp);
 
 const toDetailPayload = (
@@ -57,7 +47,7 @@ const toDetailPayload = (
     market: MarketType,
     range: DetailRangeType,
     source: DataSourceType,
-    series: SparklinePoint[]
+    series: SparklinePoint[],
 ): StockDetailData => {
     const normalizedSeries = [...series].sort((a, b) => a.timestamp - b.timestamp);
     const price = normalizedSeries[normalizedSeries.length - 1]?.value ?? 0;
@@ -83,25 +73,22 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
         ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
-    const res = await fetch(endpoint);
-    if (res.ok === false) {
-        throw new Error(`Alpha Vantage request failed with status ${res.status}`);
-    }
-
-    const payload = (await res.json()) as Record<string, unknown>;
+    const payload = await fetchJson<Record<string, unknown>>(endpoint);
     if (isAlphaVantageError(payload)) {
         const errorMessage =
             typeof payload.Note === 'string'
                 ? payload.Note
                 : typeof payload.Information === 'string'
-                    ? payload.Information
-                    : typeof payload['Error Message'] === 'string'
-                        ? payload['Error Message']
-                        : 'Alpha Vantage error';
+                  ? payload.Information
+                  : typeof payload['Error Message'] === 'string'
+                    ? payload['Error Message']
+                    : 'Alpha Vantage error';
         throw new Error(errorMessage);
     }
 
-    const parsedSeries = useIntradaySeries ? parseIntradaySeries(payload) : parseDailySeries(payload);
+    const parsedSeries = useIntradaySeries
+        ? parseIntradaySeries(payload)
+        : parseDailySeries(payload);
     const snapshot = buildHistoricalSnapshot(parsedSeries, range, { requireFullCoverage: true });
 
     if (!snapshot || snapshot.sparkline.length < 2) {
@@ -114,15 +101,16 @@ const fetchUSSeries = async (ticker: string, range: DetailRangeType): Promise<Sp
 export const mapEdgeFunctionStockToDetail = (
     payload: EdgeFunctionResponse,
     ticker: string,
-    range: DetailRangeType
+    range: DetailRangeType,
 ): StockDetailData | null => {
     if (!payload.stocks || payload.stocks.length === 0) {
         return null;
     }
 
     const normalizedTicker = ticker.toUpperCase();
-    const matched = payload.stocks.find((stock) => stock.ticker.toUpperCase() === normalizedTicker)
-        ?? payload.stocks[0];
+    const matched =
+        payload.stocks.find((stock) => stock.ticker.toUpperCase() === normalizedTicker) ??
+        payload.stocks[0];
 
     const series = sliceSeriesByDetailRange(matched.sparkline ?? [], range);
     if (series.length === 0) {
@@ -136,10 +124,11 @@ export const mapEdgeFunctionStockToDetail = (
         percentChange: Number(matched.percentChange),
         series,
         range,
-        source: mapFunctionSourceToUiSource(payload.source),
+        source: mapRemoteSourceToUiSource(payload.source, { allowMock: true }),
         stale: payload.stale ?? false,
-        lastUpdatedAt: payload.lastUpdatedAt
-            || new Date(series[series.length - 1]?.timestamp ?? Date.now()).toISOString(),
+        lastUpdatedAt:
+            payload.lastUpdatedAt ||
+            new Date(series[series.length - 1]?.timestamp ?? Date.now()).toISOString(),
     };
 };
 
@@ -148,9 +137,12 @@ const fetchARDetail = async (ticker: string, range: DetailRangeType): Promise<St
         throw new Error(supabaseConfigStatus.message);
     }
 
-    const { data, error } = await supabase.functions.invoke<EdgeFunctionResponse>('fetch-argentina-market', {
-        body: { timeframe: range, ticker: ticker.toUpperCase() },
-    });
+    const { data, error } = await supabase.functions.invoke<EdgeFunctionResponse>(
+        'fetch-argentina-market',
+        {
+            body: { timeframe: range, ticker: ticker.toUpperCase() },
+        },
+    );
 
     if (error || !data) {
         throw new Error(error?.message || 'Argentina detail request failed');
@@ -175,7 +167,11 @@ interface FetchStockDetailParams {
     range: DetailRangeType;
 }
 
-export const fetchStockDetail = async ({ ticker, market, range }: FetchStockDetailParams): Promise<StockDetailData> => {
+export const fetchStockDetail = async ({
+    ticker,
+    market,
+    range,
+}: FetchStockDetailParams): Promise<StockDetailData> => {
     const cacheKey = getDetailCacheKey(market, ticker, range);
     const cached = detailCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -185,9 +181,8 @@ export const fetchStockDetail = async ({ ticker, market, range }: FetchStockDeta
         };
     }
 
-    const data = market === 'US'
-        ? await fetchUSDetail(ticker, range)
-        : await fetchARDetail(ticker, range);
+    const data =
+        market === 'US' ? await fetchUSDetail(ticker, range) : await fetchARDetail(ticker, range);
 
     detailCache.set(cacheKey, {
         expiresAt: Date.now() + DETAIL_CACHE_TTL_MS,

@@ -15,17 +15,16 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     const systemColorScheme = useColorScheme();
     const resolvedMode = resolveThemeMode(systemColorScheme);
 
-    const value = useMemo<ThemeContextValue>(() => ({
-        resolvedMode,
-        isDark: resolvedMode === 'dark',
-        tokens: getThemeTokens(resolvedMode),
-    }), [resolvedMode]);
-
-    return (
-        <ThemeContext.Provider value={value}>
-            {children}
-        </ThemeContext.Provider>
+    const value = useMemo<ThemeContextValue>(
+        () => ({
+            resolvedMode,
+            isDark: resolvedMode === 'dark',
+            tokens: getThemeTokens(resolvedMode),
+        }),
+        [resolvedMode],
     );
+
+    return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
 
 export const useAppTheme = (): ThemeContextValue => {

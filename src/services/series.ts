@@ -2,16 +2,19 @@ import { DetailRangeType, SparklinePoint, TimeframeType } from '../types';
 
 export type HistoricalRange = TimeframeType | DetailRangeType;
 
-export const getRangeStartTimestamp = (range: HistoricalRange, referenceTimestamp: number): number => {
+export const getRangeStartTimestamp = (
+    range: HistoricalRange,
+    referenceTimestamp: number,
+): number => {
     const referenceDate = new Date(referenceTimestamp);
 
     switch (range) {
         case '1H':
-            return referenceTimestamp - (60 * 60 * 1000);
+            return referenceTimestamp - 60 * 60 * 1000;
         case '1D':
-            return referenceTimestamp - (24 * 60 * 60 * 1000);
+            return referenceTimestamp - 24 * 60 * 60 * 1000;
         case '1W':
-            return referenceTimestamp - (7 * 24 * 60 * 60 * 1000);
+            return referenceTimestamp - 7 * 24 * 60 * 60 * 1000;
         case '1M': {
             const start = new Date(referenceDate);
             start.setMonth(start.getMonth() - 1);
@@ -40,7 +43,7 @@ export const getRangeStartTimestamp = (range: HistoricalRange, referenceTimestam
 export const sliceSeriesByRange = (
     series: SparklinePoint[],
     range: HistoricalRange,
-    referenceTimestamp?: number
+    referenceTimestamp?: number,
 ): SparklinePoint[] => {
     const sorted = [...series]
         .filter((point) => Number.isFinite(point.timestamp) && Number.isFinite(point.value))
@@ -52,7 +55,9 @@ export const sliceSeriesByRange = (
 
     const latestTs = referenceTimestamp ?? sorted[sorted.length - 1].timestamp;
     const startTs = getRangeStartTimestamp(range, latestTs);
-    const filtered = sorted.filter((point) => point.timestamp >= startTs && point.timestamp <= latestTs);
+    const filtered = sorted.filter(
+        (point) => point.timestamp >= startTs && point.timestamp <= latestTs,
+    );
 
     if (filtered.length >= 2) {
         return filtered;
@@ -90,9 +95,10 @@ export const parseIntradaySeries = (payload: Record<string, unknown>): Sparkline
     return Object.entries(rawSeries as Record<string, unknown>)
         .map(([timestampRaw, row]) => {
             const timestamp = new Date(timestampRaw).getTime();
-            const closeRaw = row && typeof row === 'object'
-                ? (row as Record<string, unknown>)['4. close']
-                : undefined;
+            const closeRaw =
+                row && typeof row === 'object'
+                    ? (row as Record<string, unknown>)['4. close']
+                    : undefined;
             const value = Number(closeRaw);
 
             if (!Number.isFinite(timestamp) || !Number.isFinite(value)) {
@@ -114,9 +120,10 @@ export const parseDailySeries = (payload: Record<string, unknown>): SparklinePoi
     return Object.entries(rawSeries as Record<string, unknown>)
         .map(([dateRaw, row]) => {
             const timestamp = new Date(`${dateRaw}T00:00:00Z`).getTime();
-            const closeRaw = row && typeof row === 'object'
-                ? (row as Record<string, unknown>)['4. close']
-                : undefined;
+            const closeRaw =
+                row && typeof row === 'object'
+                    ? (row as Record<string, unknown>)['4. close']
+                    : undefined;
             const value = Number(closeRaw);
 
             if (!Number.isFinite(timestamp) || !Number.isFinite(value)) {
@@ -138,7 +145,7 @@ export const buildHistoricalSnapshot = (
     options?: {
         referenceTimestamp?: number;
         requireFullCoverage?: boolean;
-    }
+    },
 ): { price: number; percentChange: number; sparkline: SparklinePoint[] } | null => {
     const sorted = [...series]
         .filter((point) => Number.isFinite(point.timestamp) && Number.isFinite(point.value))

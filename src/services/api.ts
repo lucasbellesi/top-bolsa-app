@@ -1,4 +1,15 @@
-import { DataSourceType, MarketType, TimeframeType, StockData, SparklinePoint, StockRankingData } from '../types';
+import { appConfig, isRuntimeDev } from '@core/config/env';
+import { fetchJson } from '@core/network/fetchJson';
+import { logger } from '@core/logging/logger';
+import { mapRemoteSourceToUiSource } from '@services/shared/source';
+import type {
+    DataSourceType,
+    MarketType,
+    TimeframeType,
+    StockData,
+    SparklinePoint,
+    StockRankingData,
+} from '../types';
 import { supabase, supabaseConfigStatus } from './supabase';
 import {
     buildHistoricalSnapshot,
@@ -7,8 +18,7 @@ import {
     parseIntradaySeries,
 } from './series';
 
-const ALPHAVANTAGE_KEY = process.env.EXPO_PUBLIC_STOCK_API_KEY || 'demo';
-const EXPO_ALLOW_MOCK_FALLBACK = process.env.EXPO_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
+const ALPHAVANTAGE_KEY = appConfig.stockApiKey;
 const US_TOP_GAINERS_CACHE_TTL_MS = 60 * 1000;
 const US_RANKING_CACHE_TTL_MS = 5 * 60 * 1000;
 const US_COMPANY_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -31,7 +41,10 @@ interface AlphaTopMoversResponse {
 }
 
 let usTopMoversCache: { expiresAt: number; rows: AlphaTopGainerRow[] } | null = null;
-const usRankingCache = new Map<TimeframeType, { expiresAt: number; stocks: StockData[]; lastUpdatedAt?: string }>();
+const usRankingCache = new Map<
+    TimeframeType,
+    { expiresAt: number; stocks: StockData[]; lastUpdatedAt?: string }
+>();
 const usCompanyNameCache = new Map<string, { expiresAt: number; companyName: string }>();
 
 const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
@@ -54,11 +67,7 @@ const US_COMPANY_NAME_BY_TICKER: Record<string, string> = {
 };
 
 const shouldUseMockFallback = (): boolean => {
-    const runtimeDevFlag = typeof globalThis !== 'undefined'
-        && '__DEV__' in globalThis
-        && Boolean((globalThis as Record<string, unknown>).__DEV__);
-
-    return runtimeDevFlag || EXPO_ALLOW_MOCK_FALLBACK;
+    return isRuntimeDev() || appConfig.allowMockFallback;
 };
 
 // Helper to generate mock sparkline
@@ -75,7 +84,9 @@ const generateMockSparkline = (basePrice: number, points: number = 20): Sparklin
 };
 
 const resolveUSCompanyName = (ticker: string, rawName?: string): string =>
-    (rawName && rawName.trim()) || US_COMPANY_NAME_BY_TICKER[ticker.toUpperCase()] || ticker.toUpperCase();
+    (rawName && rawName.trim()) ||
+    US_COMPANY_NAME_BY_TICKER[ticker.toUpperCase()] ||
+    ticker.toUpperCase();
 
 const parsePercentString = (rawValue?: string): number => {
     const normalizedValue = (rawValue || '').replace('%', '').trim();
@@ -85,20 +96,18 @@ const parsePercentString = (rawValue?: string): number => {
 
 const buildFallbackSparkline = (currentPrice: number, percentChange: number): SparklinePoint[] => {
     const now = Date.now();
-    const baselinePrice = percentChange <= -100
-        ? currentPrice
-        : currentPrice / (1 + (percentChange / 100));
+    const baselinePrice =
+        percentChange <= -100 ? currentPrice : currentPrice / (1 + percentChange / 100);
 
     if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
         return [];
     }
 
-    const safeBaselinePrice = Number.isFinite(baselinePrice) && baselinePrice > 0
-        ? baselinePrice
-        : currentPrice;
+    const safeBaselinePrice =
+        Number.isFinite(baselinePrice) && baselinePrice > 0 ? baselinePrice : currentPrice;
 
     return [
-        { timestamp: now - (60 * 60 * 1000), value: safeBaselinePrice },
+        { timestamp: now - 60 * 60 * 1000, value: safeBaselinePrice },
         { timestamp: now, value: currentPrice },
     ];
 };
@@ -142,33 +151,33 @@ const fetchYahooCompanyName = async (ticker: string): Promise<string | null> => 
     const normalizedTicker = ticker.toUpperCase();
 
     try {
-        const response = await fetch(
-            `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(normalizedTicker)}&quotesCount=5&newsCount=0`,
-            {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0',
-                },
-            }
-        );
-        const payload = await response.json() as {
+        const payload = await fetchJson<{
             quotes?: Array<{
                 symbol?: string;
                 shortname?: string;
                 longname?: string;
                 quoteType?: string;
             }>;
-        };
+        }>(
+            `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(normalizedTicker)}&quotesCount=5&newsCount=0`,
+            {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                },
+            },
+        );
 
-        const exactQuote = payload.quotes?.find((quote) =>
-            quote.symbol?.toUpperCase() === normalizedTicker
-            && quote.quoteType !== 'OPTION'
-            && quote.quoteType !== 'CRYPTOCURRENCY'
+        const exactQuote = payload.quotes?.find(
+            (quote) =>
+                quote.symbol?.toUpperCase() === normalizedTicker &&
+                quote.quoteType !== 'OPTION' &&
+                quote.quoteType !== 'CRYPTOCURRENCY',
         );
 
         const yahooName = exactQuote?.longname?.trim() || exactQuote?.shortname?.trim() || '';
         return yahooName || null;
     } catch (error) {
-        console.warn(`Yahoo company name fetch failed for ${normalizedTicker}:`, error);
+        logger.warn(`Yahoo company name fetch failed for ${normalizedTicker}:`, error);
         return null;
     }
 };
@@ -200,10 +209,9 @@ const fetchUSCompanyName = async (ticker: string): Promise<string> => {
     }
 
     try {
-        const response = await fetch(
-            `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${normalizedTicker}&apikey=${ALPHAVANTAGE_KEY}`
+        const payload = await fetchJson<Record<string, unknown>>(
+            `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${normalizedTicker}&apikey=${ALPHAVANTAGE_KEY}`,
         );
-        const payload = await response.json() as Record<string, unknown>;
         const overviewName = typeof payload.Name === 'string' ? payload.Name.trim() : '';
 
         const companyName = overviewName || normalizedTicker;
@@ -214,7 +222,7 @@ const fetchUSCompanyName = async (ticker: string): Promise<string> => {
 
         return companyName;
     } catch (error) {
-        console.warn(`US company name fetch failed for ${normalizedTicker}:`, error);
+        logger.warn(`US company name fetch failed for ${normalizedTicker}:`, error);
         return normalizedTicker;
     }
 };
@@ -227,7 +235,9 @@ const enrichUSStocksWithCompanyNames = async (
     let lookupCount = 0;
 
     for (const stock of stocks) {
-        const hasResolvedCompanyName = Boolean(stock.companyName && stock.companyName !== stock.ticker);
+        const hasResolvedCompanyName = Boolean(
+            stock.companyName && stock.companyName !== stock.ticker,
+        );
         let companyName = stock.companyName || stock.ticker;
 
         if (!hasResolvedCompanyName) {
@@ -254,8 +264,9 @@ const fetchUSTopMovers = async (): Promise<AlphaTopGainerRow[]> => {
         return usTopMoversCache.rows;
     }
 
-    const res = await fetch(`https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`);
-    const data = await res.json() as AlphaTopMoversResponse;
+    const data = await fetchJson<AlphaTopMoversResponse>(
+        `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${ALPHAVANTAGE_KEY}`,
+    );
 
     const mergedRows = [
         ...(Array.isArray(data.top_gainers) ? data.top_gainers : []),
@@ -264,14 +275,16 @@ const fetchUSTopMovers = async (): Promise<AlphaTopGainerRow[]> => {
     ];
 
     const seen = new Set<string>();
-    const rows = mergedRows.filter((row) => {
-        const ticker = row.ticker?.toUpperCase();
-        if (!ticker || seen.has(ticker)) {
-            return false;
-        }
-        seen.add(ticker);
-        return true;
-    }).slice(0, US_CANDIDATE_POOL_LIMIT);
+    const rows = mergedRows
+        .filter((row) => {
+            const ticker = row.ticker?.toUpperCase();
+            if (!ticker || seen.has(ticker)) {
+                return false;
+            }
+            seen.add(ticker);
+            return true;
+        })
+        .slice(0, US_CANDIDATE_POOL_LIMIT);
 
     if (rows.length > 0) {
         usTopMoversCache = {
@@ -289,12 +302,7 @@ const fetchUSHistoricalSnapshot = async (ticker: string, timeframe: TimeframeTyp
         ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${ticker}&interval=5min&outputsize=compact&apikey=${ALPHAVANTAGE_KEY}`
         : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=full&apikey=${ALPHAVANTAGE_KEY}`;
 
-    const response = await fetch(endpoint);
-    if (response.ok === false) {
-        throw new Error(`Alpha Vantage request failed with status ${response.status}`);
-    }
-
-    const payload = await response.json() as Record<string, unknown>;
+    const payload = await fetchJson<Record<string, unknown>>(endpoint);
 
     if (isAlphaVantageError(payload)) {
         return null;
@@ -340,7 +348,7 @@ const fetchUSRankingByTimeframe = async (
                 sparkline: snapshot.sparkline,
             });
         } catch (error) {
-            console.warn(`US ${timeframe} fetch failed for ${row.ticker}:`, error);
+            logger.warn(`US ${timeframe} fetch failed for ${row.ticker}:`, error);
         }
     }
 
@@ -360,9 +368,13 @@ const fetchUSRankingByTimeframe = async (
         ranked.push(...fallbackStocks);
     }
 
-    const enrichedRanked = ranked.length > 0
-        ? await enrichUSStocksWithCompanyNames(ranked, timeframe === '1H' ? 0 : US_COMPANY_NAME_LOOKUP_LIMIT)
-        : ranked;
+    const enrichedRanked =
+        ranked.length > 0
+            ? await enrichUSStocksWithCompanyNames(
+                  ranked,
+                  timeframe === '1H' ? 0 : US_COMPANY_NAME_LOOKUP_LIMIT,
+              )
+            : ranked;
 
     if (enrichedRanked.length > 0) {
         const lastUpdatedAt = getLatestSparklineTimestamp(enrichedRanked);
@@ -396,7 +408,7 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
             }
         }
     } catch (error) {
-        console.error("US Market Fetch Error", error);
+        logger.error('US Market Fetch Error', error);
     }
 
     // Avoid fabricated prices in production releases.
@@ -410,35 +422,47 @@ export const fetchUSMarketGainers = async (timeframe: TimeframeType): Promise<St
 export const fetchARMarketGainers = async (timeframe: TimeframeType): Promise<StockRankingData> => {
     if (supabase) {
         try {
-            const { data, error } = await supabase.functions.invoke<{ stocks?: StockData[]; source?: string; stale?: boolean; lastUpdatedAt?: string }>(
-                'fetch-argentina-market',
-                {
-                    body: { timeframe },
-                }
-            );
+            const { data, error } = await supabase.functions.invoke<{
+                stocks?: StockData[];
+                source?: string;
+                stale?: boolean;
+                lastUpdatedAt?: string;
+            }>('fetch-argentina-market', {
+                body: { timeframe },
+            });
 
             if (!error && data?.stocks?.length) {
                 return {
-                    stocks: data.stocks.sort((a, b) => b.percentChange - a.percentChange).slice(0, 10),
-                    source: mapFunctionSourceToUiSource(data.source),
+                    stocks: data.stocks
+                        .sort((a, b) => b.percentChange - a.percentChange)
+                        .slice(0, 10),
+                    source: mapRemoteSourceToUiSource(data.source, {
+                        logUnknownSource: true,
+                        unknownSourceLabel: 'Unknown Argentina market source from edge function:',
+                    }),
                     stale: data.stale ?? false,
                     lastUpdatedAt: data.lastUpdatedAt,
                 };
             }
 
             if (error) {
-                console.warn('Argentina market edge function error:', error.message);
+                logger.warn('Argentina market edge function error:', error.message);
             }
         } catch (error) {
-            console.warn('Argentina market edge function invocation failed:', error);
+            logger.warn('Argentina market edge function invocation failed:', error);
         }
     } else {
-        console.warn('[SUPABASE_DEGRADED_MODE]', supabaseConfigStatus.message);
+        logger.warn('[SUPABASE_DEGRADED_MODE]', supabaseConfigStatus.message);
     }
 
     const cached = await fetchArgentinaFromCache(timeframe);
     if (cached.stocks.length > 0) {
-        return { stocks: cached.stocks, source: 'CACHE', stale: true, lastUpdatedAt: cached.lastUpdatedAt };
+        return {
+            stocks: cached.stocks,
+            source: 'CACHE',
+            stale: true,
+            lastUpdatedAt: cached.lastUpdatedAt,
+        };
     }
 
     if (shouldUseMockFallback()) {
@@ -455,33 +479,100 @@ export const __resetUsApiCachesForTests = (): void => {
 };
 
 const getMockUSData = (): StockData[] => {
-    return ([
-        { id: 'NVDA', ticker: 'NVDA', companyName: 'NVIDIA Corporation', market: 'US', price: 850.20, percentChange: 8.5, sparkline: generateMockSparkline(850.20) },
-        { id: 'AAPL', ticker: 'AAPL', companyName: 'Apple Inc.', market: 'US', price: 175.50, percentChange: 2.1, sparkline: generateMockSparkline(175.50) },
-        { id: 'MSFT', ticker: 'MSFT', companyName: 'Microsoft Corporation', market: 'US', price: 420.30, percentChange: 1.8, sparkline: generateMockSparkline(420.30) },
-        { id: 'TSLA', ticker: 'TSLA', companyName: 'Tesla, Inc.', market: 'US', price: 210.00, percentChange: 1.5, sparkline: generateMockSparkline(210.00) },
-        { id: 'AMZN', ticker: 'AMZN', companyName: 'Amazon.com, Inc.', market: 'US', price: 180.50, percentChange: 1.2, sparkline: generateMockSparkline(180.50) },
-        { id: 'META', ticker: 'META', companyName: 'Meta Platforms, Inc.', market: 'US', price: 500.00, percentChange: 1.0, sparkline: generateMockSparkline(500.00) },
-        { id: 'GOOGL', ticker: 'GOOGL', companyName: 'Alphabet Inc.', market: 'US', price: 145.20, percentChange: 0.8, sparkline: generateMockSparkline(145.20) },
-        { id: 'AMD', ticker: 'AMD', companyName: 'Advanced Micro Devices, Inc.', market: 'US', price: 160.00, percentChange: 0.5, sparkline: generateMockSparkline(160.00) },
-        { id: 'NFLX', ticker: 'NFLX', companyName: 'Netflix, Inc.', market: 'US', price: 610.20, percentChange: 0.3, sparkline: generateMockSparkline(610.20) },
-        { id: 'INTC', ticker: 'INTC', companyName: 'Intel Corporation', market: 'US', price: 45.10, percentChange: 0.1, sparkline: generateMockSparkline(45.10) },
-    ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange);
-};
-
-const mapFunctionSourceToUiSource = (source?: string): DataSourceType => {
-    switch ((source || '').toLowerCase()) {
-        case 'live':
-            return 'LIVE';
-        case 'cache':
-        case 'cache_fallback':
-            return 'CACHE';
-        default:
-            if (source) {
-                console.warn('Unknown Argentina market source from edge function:', source);
-            }
-            return 'UNAVAILABLE';
-    }
+    return (
+        [
+            {
+                id: 'NVDA',
+                ticker: 'NVDA',
+                companyName: 'NVIDIA Corporation',
+                market: 'US',
+                price: 850.2,
+                percentChange: 8.5,
+                sparkline: generateMockSparkline(850.2),
+            },
+            {
+                id: 'AAPL',
+                ticker: 'AAPL',
+                companyName: 'Apple Inc.',
+                market: 'US',
+                price: 175.5,
+                percentChange: 2.1,
+                sparkline: generateMockSparkline(175.5),
+            },
+            {
+                id: 'MSFT',
+                ticker: 'MSFT',
+                companyName: 'Microsoft Corporation',
+                market: 'US',
+                price: 420.3,
+                percentChange: 1.8,
+                sparkline: generateMockSparkline(420.3),
+            },
+            {
+                id: 'TSLA',
+                ticker: 'TSLA',
+                companyName: 'Tesla, Inc.',
+                market: 'US',
+                price: 210.0,
+                percentChange: 1.5,
+                sparkline: generateMockSparkline(210.0),
+            },
+            {
+                id: 'AMZN',
+                ticker: 'AMZN',
+                companyName: 'Amazon.com, Inc.',
+                market: 'US',
+                price: 180.5,
+                percentChange: 1.2,
+                sparkline: generateMockSparkline(180.5),
+            },
+            {
+                id: 'META',
+                ticker: 'META',
+                companyName: 'Meta Platforms, Inc.',
+                market: 'US',
+                price: 500.0,
+                percentChange: 1.0,
+                sparkline: generateMockSparkline(500.0),
+            },
+            {
+                id: 'GOOGL',
+                ticker: 'GOOGL',
+                companyName: 'Alphabet Inc.',
+                market: 'US',
+                price: 145.2,
+                percentChange: 0.8,
+                sparkline: generateMockSparkline(145.2),
+            },
+            {
+                id: 'AMD',
+                ticker: 'AMD',
+                companyName: 'Advanced Micro Devices, Inc.',
+                market: 'US',
+                price: 160.0,
+                percentChange: 0.5,
+                sparkline: generateMockSparkline(160.0),
+            },
+            {
+                id: 'NFLX',
+                ticker: 'NFLX',
+                companyName: 'Netflix, Inc.',
+                market: 'US',
+                price: 610.2,
+                percentChange: 0.3,
+                sparkline: generateMockSparkline(610.2),
+            },
+            {
+                id: 'INTC',
+                ticker: 'INTC',
+                companyName: 'Intel Corporation',
+                market: 'US',
+                price: 45.1,
+                percentChange: 0.1,
+                sparkline: generateMockSparkline(45.1),
+            },
+        ] as StockData[]
+    ).sort((a, b) => b.percentChange - a.percentChange);
 };
 
 interface ArgentinaCacheRow {
@@ -495,7 +586,7 @@ interface ArgentinaCacheRow {
 }
 
 const fetchArgentinaFromCache = async (
-    timeframe: TimeframeType
+    timeframe: TimeframeType,
 ): Promise<{ stocks: StockData[]; lastUpdatedAt?: string }> => {
     if (!supabase) {
         return { stocks: [] };
@@ -511,12 +602,12 @@ const fetchArgentinaFromCache = async (
 
         if (error || !data) {
             if (error) {
-                console.warn('Argentina market cache read failed:', error.message);
+                logger.warn('Argentina market cache read failed:', error.message);
             }
             return { stocks: [] };
         }
 
-        const rows = (data as ArgentinaCacheRow[]);
+        const rows = data as ArgentinaCacheRow[];
         const stocks = rows
             .map((row) => ({
                 id: row.ticker,
@@ -546,22 +637,104 @@ const fetchArgentinaFromCache = async (
 
         return { stocks, lastUpdatedAt };
     } catch (error) {
-        console.warn('Argentina market cache fallback failed:', error);
+        logger.warn('Argentina market cache fallback failed:', error);
         return { stocks: [] };
     }
 };
 
 const getMockARData = (): StockData[] => {
-    return ([
-        { id: 'GGAL', ticker: 'GGAL', companyName: 'Grupo Financiero Galicia S.A.', market: 'AR', price: 4500.50, percentChange: 5.2, sparkline: generateMockSparkline(4500.50) },
-        { id: 'YPFD', ticker: 'YPFD', companyName: 'YPF S.A.', market: 'AR', price: 21500.00, percentChange: 4.8, sparkline: generateMockSparkline(21500.00) },
-        { id: 'PAMP', ticker: 'PAMP', companyName: 'Pampa Energia S.A.', market: 'AR', price: 2800.75, percentChange: 3.5, sparkline: generateMockSparkline(2800.75) },
-        { id: 'BMA', ticker: 'BMA', companyName: 'Banco Macro S.A.', market: 'AR', price: 6200.00, percentChange: 2.1, sparkline: generateMockSparkline(6200.00) },
-        { id: 'TXAR', ticker: 'TXAR', companyName: 'Ternium Argentina S.A.', market: 'AR', price: 980.00, percentChange: 1.8, sparkline: generateMockSparkline(980.00) },
-        { id: 'LOMA', ticker: 'LOMA', companyName: 'Loma Negra C.I.A.S.A.', market: 'AR', price: 1550.00, percentChange: 1.5, sparkline: generateMockSparkline(1550.00) },
-        { id: 'CEPU', ticker: 'CEPU', companyName: 'Central Puerto S.A.', market: 'AR', price: 1200.00, percentChange: 1.2, sparkline: generateMockSparkline(1200.00) },
-        { id: 'EDN', ticker: 'EDN', companyName: 'Edenor S.A.', market: 'AR', price: 850.50, percentChange: 0.9, sparkline: generateMockSparkline(850.50) },
-        { id: 'CRES', ticker: 'CRES', companyName: 'Cresud S.A.C.I.F. y A.', market: 'AR', price: 1100.25, percentChange: 0.5, sparkline: generateMockSparkline(1100.25) },
-        { id: 'SUPV', ticker: 'SUPV', companyName: 'Grupo Supervielle S.A.', market: 'AR', price: 480.00, percentChange: 0.2, sparkline: generateMockSparkline(480.00) },
-    ] as StockData[]).sort((a, b) => b.percentChange - a.percentChange);
+    return (
+        [
+            {
+                id: 'GGAL',
+                ticker: 'GGAL',
+                companyName: 'Grupo Financiero Galicia S.A.',
+                market: 'AR',
+                price: 4500.5,
+                percentChange: 5.2,
+                sparkline: generateMockSparkline(4500.5),
+            },
+            {
+                id: 'YPFD',
+                ticker: 'YPFD',
+                companyName: 'YPF S.A.',
+                market: 'AR',
+                price: 21500.0,
+                percentChange: 4.8,
+                sparkline: generateMockSparkline(21500.0),
+            },
+            {
+                id: 'PAMP',
+                ticker: 'PAMP',
+                companyName: 'Pampa Energia S.A.',
+                market: 'AR',
+                price: 2800.75,
+                percentChange: 3.5,
+                sparkline: generateMockSparkline(2800.75),
+            },
+            {
+                id: 'BMA',
+                ticker: 'BMA',
+                companyName: 'Banco Macro S.A.',
+                market: 'AR',
+                price: 6200.0,
+                percentChange: 2.1,
+                sparkline: generateMockSparkline(6200.0),
+            },
+            {
+                id: 'TXAR',
+                ticker: 'TXAR',
+                companyName: 'Ternium Argentina S.A.',
+                market: 'AR',
+                price: 980.0,
+                percentChange: 1.8,
+                sparkline: generateMockSparkline(980.0),
+            },
+            {
+                id: 'LOMA',
+                ticker: 'LOMA',
+                companyName: 'Loma Negra C.I.A.S.A.',
+                market: 'AR',
+                price: 1550.0,
+                percentChange: 1.5,
+                sparkline: generateMockSparkline(1550.0),
+            },
+            {
+                id: 'CEPU',
+                ticker: 'CEPU',
+                companyName: 'Central Puerto S.A.',
+                market: 'AR',
+                price: 1200.0,
+                percentChange: 1.2,
+                sparkline: generateMockSparkline(1200.0),
+            },
+            {
+                id: 'EDN',
+                ticker: 'EDN',
+                companyName: 'Edenor S.A.',
+                market: 'AR',
+                price: 850.5,
+                percentChange: 0.9,
+                sparkline: generateMockSparkline(850.5),
+            },
+            {
+                id: 'CRES',
+                ticker: 'CRES',
+                companyName: 'Cresud S.A.C.I.F. y A.',
+                market: 'AR',
+                price: 1100.25,
+                percentChange: 0.5,
+                sparkline: generateMockSparkline(1100.25),
+            },
+            {
+                id: 'SUPV',
+                ticker: 'SUPV',
+                companyName: 'Grupo Supervielle S.A.',
+                market: 'AR',
+                price: 480.0,
+                percentChange: 0.2,
+                sparkline: generateMockSparkline(480.0),
+            },
+        ] as StockData[]
+    ).sort((a, b) => b.percentChange - a.percentChange);
 };

@@ -1,14 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { DetailRangeType, MarketType, StockDetailData } from '../types';
-import { fetchStockDetail } from '../services/stockDetail';
+import { queryKeys } from '@core/query/queryKeys';
+import { fetchStockDetail } from '@services/stockDetail';
+import type { DetailRangeType, MarketType, StockDetailData } from '../types';
 
-export const useStockDetail = (
-    ticker: string,
-    market: MarketType,
-    range: DetailRangeType
-) => {
+export const useStockDetail = (ticker: string, market: MarketType, range: DetailRangeType) => {
     return useQuery<StockDetailData, Error>({
-        queryKey: ['stockDetail', ticker, market, range],
+        queryKey: queryKeys.stockDetail(ticker, market, range),
         queryFn: () => fetchStockDetail({ ticker, market, range }),
         enabled: Boolean(ticker),
         refetchInterval: 60000,

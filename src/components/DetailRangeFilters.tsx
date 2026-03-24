@@ -33,8 +33,14 @@ export const DetailRangeFilters = ({ activeRange, onSelect }: DetailRangeFilters
                                 LayoutAnimation.configureNext({
                                     duration: 160,
                                     update: { type: LayoutAnimation.Types.easeInEaseOut },
-                                    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                                    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                    create: {
+                                        type: LayoutAnimation.Types.easeInEaseOut,
+                                        property: LayoutAnimation.Properties.opacity,
+                                    },
+                                    delete: {
+                                        type: LayoutAnimation.Types.easeInEaseOut,
+                                        property: LayoutAnimation.Properties.opacity,
+                                    },
                                 });
                                 await triggerSelectionHaptic();
                                 onSelect(range);
@@ -51,7 +57,10 @@ export const DetailRangeFilters = ({ activeRange, onSelect }: DetailRangeFilters
                                 borderWidth: 1,
                             }}
                         >
-                            <Text className="font-semibold text-sm" style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}>
+                            <Text
+                                className="font-semibold text-sm"
+                                style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}
+                            >
                                 {range}
                             </Text>
                         </Pressable>

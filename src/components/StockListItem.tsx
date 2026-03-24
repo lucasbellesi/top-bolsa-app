@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { CurrencyType, DataFreshnessType, StockData } from '../types';
 import { LineChart } from 'react-native-wagmi-charts';
@@ -16,7 +16,14 @@ interface StockListItemProps {
     lastUpdatedAt?: number;
 }
 
-export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fresh', lastUpdatedAt }: StockListItemProps) => {
+const StockListItemComponent = ({
+    stock,
+    index,
+    currency,
+    onPress,
+    freshness = 'fresh',
+    lastUpdatedAt,
+}: StockListItemProps) => {
     const { tokens } = useAppTheme();
     const isPositive = stock.percentChange >= 0;
     const color = isPositive ? tokens.positive : tokens.negative;
@@ -52,7 +59,7 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
             opacity: containerOpacity,
             transform: [{ translateY }],
         }),
-        [containerOpacity, tokens.bgSurface, tokens.borderSubtle, translateY]
+        [containerOpacity, tokens.bgSurface, tokens.borderSubtle, translateY],
     );
 
     return (
@@ -133,7 +140,10 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
                         ) : (
                             <TrendingDown color={color} size={14} />
                         )}
-                        <Text className="ml-1 font-bold text-xs" style={[appTypography.numbers, { color }]}>
+                        <Text
+                            className="ml-1 font-bold text-xs"
+                            style={[appTypography.numbers, { color }]}
+                        >
                             {formattedChange}
                         </Text>
                     </View>
@@ -142,3 +152,5 @@ export const StockListItem = ({ stock, index, currency, onPress, freshness = 'fr
         </Animated.View>
     );
 };
+
+export const StockListItem = memo(StockListItemComponent);

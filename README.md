@@ -1,6 +1,7 @@
 # Top Bolsa App
 
 React Native app (Expo + TypeScript) that shows top gainers for:
+
 - US market (Alpha Vantage)
 - Argentina BYMA market (Yahoo Finance via Supabase Edge Function)
 
@@ -21,16 +22,19 @@ React Native app (Expo + TypeScript) that shows top gainers for:
 ## Data Flow
 
 US (`fetchUSMarketGainers`)
+
 - Source: Alpha Vantage (`TOP_GAINERS_LOSERS`)
 - Fallback chain: ranked cache -> (dev/opt-in) local mock -> `UNAVAILABLE`
 
 Argentina (`fetchARMarketGainers`)
+
 - 1st attempt: Supabase Edge Function `fetch-argentina-market`
 - Edge Function source: `yahoo-finance2` using BYMA symbols with `.BA` suffix
 - Cache write/read table: `public.argentina_market_cache`
 - App fallback chain: edge function -> cache table -> (dev/opt-in) local mock -> `UNAVAILABLE`
 
 Argentina company profile (`fetchCompanyProfile` for `AR`)
+
 - 1st attempt: Supabase Edge Function `fetch-argentina-company-profile`
 - Cache write/read table: `public.argentina_company_profile_cache`
 - App fallback chain: edge function -> in-memory cache/minimal profile
@@ -52,6 +56,7 @@ Argentina company profile (`fetchCompanyProfile` for `AR`)
 ## Setup
 
 1. Clone and install
+
 ```bash
 git clone https://github.com/lucasbellesi/top-bolsa-app.git
 cd top-bolsa-app
@@ -59,6 +64,7 @@ npm install
 ```
 
 2. Create `.env`
+
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
@@ -68,30 +74,36 @@ EXPO_PUBLIC_ALLOW_MOCK_FALLBACK=false
 ```
 
 3. Link Supabase project
+
 ```bash
 supabase login
 supabase link --project-ref <your-project-ref>
 ```
 
 4. Apply database schema
+
 ```bash
 supabase db push --include-all
 ```
 
 5. Deploy Supabase Edge Functions
+
 ```bash
 supabase functions deploy fetch-argentina-market
 supabase functions deploy fetch-argentina-company-profile
 ```
 
 6. Configure cache TTLs (optional)
+
 ```bash
 supabase secrets set ARGENTINA_CACHE_TTL_SECONDS=300
 supabase secrets set ARGENTINA_COMPANY_PROFILE_CACHE_TTL_SECONDS=86400
 ```
 
 7. Configure BYMA warm-up scheduler values (required once)
+
 - Open your Supabase SQL Editor and run:
+
 ```sql
 update public.internal_scheduler_config
 set value = 'https://<your-project-ref>.supabase.co', updated_at = now()
@@ -110,27 +122,32 @@ The migration `20260225213000_add_1h_timeframe_support.sql` adds `1H` support in
 ## Verification
 
 - Run full local verification:
+
 ```bash
 npm run verify
 ```
+
 - Supabase snapshot parity only:
+
 ```bash
 npm run check:supabase-schema
 ```
 
 - CI workflow:
-  - `.github/workflows/verify.yml` runs `npm run verify` for pull requests to `main` and pushes to `main`
+    - `.github/workflows/verify.yml` runs `npm run verify` for pull requests to `main` and pushes to `main`
 
 If Supabase env vars are missing, the app runs in degraded mode and logs a `[SUPABASE_DEGRADED_MODE]` warning with missing keys.
 
 ## Run
 
 Android (recommended):
+
 ```bash
 npm run android
 ```
 
 Other targets:
+
 ```bash
 npm run ios
 npm run web
@@ -154,6 +171,6 @@ npm run start
 1. Publish a public privacy policy URL (HTTPS) using `PRIVACY_POLICY.md` as base.
 2. Complete Google Play Data Safety form using your real SDK/services.
 3. Keep financial disclaimer visible in-app and in store listing:
-   - "Informational use only. Not investment advice."
+    - "Informational use only. Not investment advice."
 4. Verify market data licensing for commercial/ads use before launch.
 5. If AdMob is enabled, implement consent flow where required (EEA/UK/CH).

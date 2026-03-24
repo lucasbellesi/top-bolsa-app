@@ -11,7 +11,11 @@ vi.mock('./supabase', () => ({
     },
 }));
 
-import { computePercentChangeFromSeries, mapEdgeFunctionStockToDetail, sliceSeriesByDetailRange } from './stockDetail';
+import {
+    computePercentChangeFromSeries,
+    mapEdgeFunctionStockToDetail,
+    sliceSeriesByDetailRange,
+} from './stockDetail';
 import { buildHistoricalSnapshot } from './series';
 
 const buildDailySeries = (days: number): SparklinePoint[] => {
@@ -50,33 +54,39 @@ describe('stock detail helpers', () => {
     it('rejects historical snapshots when the requested range is not fully covered', () => {
         const now = Date.now();
         const shortIntradaySeries: SparklinePoint[] = [
-            { timestamp: now - (10 * 60 * 1000), value: 100 },
+            { timestamp: now - 10 * 60 * 1000, value: 100 },
             { timestamp: now, value: 105 },
         ];
 
-        expect(buildHistoricalSnapshot(shortIntradaySeries, '1D', { requireFullCoverage: true })).toBeNull();
+        expect(
+            buildHistoricalSnapshot(shortIntradaySeries, '1D', { requireFullCoverage: true }),
+        ).toBeNull();
     });
 
     it('maps AR edge-function response to stock detail payload', () => {
         const lastUpdatedAt = '2026-03-01T12:30:00.000Z';
-        const result = mapEdgeFunctionStockToDetail({
-            source: 'cache_fallback',
-            stale: true,
-            lastUpdatedAt,
-            stocks: [
-                {
-                    id: 'GGAL',
-                    ticker: 'GGAL',
-                    market: 'AR',
-                    price: 4200,
-                    percentChange: 3.25,
-                    sparkline: [
-                        { timestamp: Date.now() - 3600000, value: 4000 },
-                        { timestamp: Date.now(), value: 4200 },
-                    ],
-                },
-            ],
-        }, 'GGAL', '1H');
+        const result = mapEdgeFunctionStockToDetail(
+            {
+                source: 'cache_fallback',
+                stale: true,
+                lastUpdatedAt,
+                stocks: [
+                    {
+                        id: 'GGAL',
+                        ticker: 'GGAL',
+                        market: 'AR',
+                        price: 4200,
+                        percentChange: 3.25,
+                        sparkline: [
+                            { timestamp: Date.now() - 3600000, value: 4000 },
+                            { timestamp: Date.now(), value: 4200 },
+                        ],
+                    },
+                ],
+            },
+            'GGAL',
+            '1H',
+        );
 
         expect(result).not.toBeNull();
         expect(result?.ticker).toBe('GGAL');
@@ -88,22 +98,26 @@ describe('stock detail helpers', () => {
     });
 
     it('defaults stale flag to false when edge payload omits it', () => {
-        const result = mapEdgeFunctionStockToDetail({
-            source: 'live',
-            stocks: [
-                {
-                    id: 'PAMP',
-                    ticker: 'PAMP',
-                    market: 'AR',
-                    price: 3000,
-                    percentChange: 1.1,
-                    sparkline: [
-                        { timestamp: Date.now() - 3600000, value: 2950 },
-                        { timestamp: Date.now(), value: 3000 },
-                    ],
-                },
-            ],
-        }, 'PAMP', '1H');
+        const result = mapEdgeFunctionStockToDetail(
+            {
+                source: 'live',
+                stocks: [
+                    {
+                        id: 'PAMP',
+                        ticker: 'PAMP',
+                        market: 'AR',
+                        price: 3000,
+                        percentChange: 1.1,
+                        sparkline: [
+                            { timestamp: Date.now() - 3600000, value: 2950 },
+                            { timestamp: Date.now(), value: 3000 },
+                        ],
+                    },
+                ],
+            },
+            'PAMP',
+            '1H',
+        );
 
         expect(result).not.toBeNull();
         expect(result?.source).toBe('LIVE');

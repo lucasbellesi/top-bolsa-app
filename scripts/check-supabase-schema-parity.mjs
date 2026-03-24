@@ -32,7 +32,9 @@ const migrationEntries = migrationFiles.map((fileName) => {
 
 const getLatestMigrationForTable = (table) => {
     const matches = migrationEntries
-        .filter((entry) => entry.timestamp && entry.content.toLowerCase().includes(table.toLowerCase()))
+        .filter(
+            (entry) => entry.timestamp && entry.content.toLowerCase().includes(table.toLowerCase()),
+        )
         .sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
 
     return matches.length > 0 ? matches[matches.length - 1].timestamp : null;
@@ -56,21 +58,29 @@ for (const snapshot of snapshots) {
     const latestMigration = getLatestMigrationForTable(snapshot.table);
 
     if (!content.toLowerCase().includes(snapshot.table.toLowerCase())) {
-        failures.push(`Snapshot ${path.basename(snapshot.filePath)} does not reference table ${snapshot.table}.`);
+        failures.push(
+            `Snapshot ${path.basename(snapshot.filePath)} does not reference table ${snapshot.table}.`,
+        );
     }
 
     if (!marker) {
-        failures.push(`Snapshot ${path.basename(snapshot.filePath)} is missing snapshot-source-migration marker.`);
+        failures.push(
+            `Snapshot ${path.basename(snapshot.filePath)} is missing snapshot-source-migration marker.`,
+        );
         continue;
     }
 
     if (!latestMigration && marker !== 'none') {
-        failures.push(`Snapshot ${path.basename(snapshot.filePath)} marker must be 'none' because no migration references ${snapshot.table}.`);
+        failures.push(
+            `Snapshot ${path.basename(snapshot.filePath)} marker must be 'none' because no migration references ${snapshot.table}.`,
+        );
         continue;
     }
 
     if (latestMigration && marker !== latestMigration) {
-        failures.push(`Snapshot ${path.basename(snapshot.filePath)} is stale. Expected marker ${latestMigration}, found ${marker}.`);
+        failures.push(
+            `Snapshot ${path.basename(snapshot.filePath)} is stale. Expected marker ${latestMigration}, found ${marker}.`,
+        );
     }
 }
 

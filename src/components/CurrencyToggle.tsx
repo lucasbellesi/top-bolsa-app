@@ -16,7 +16,11 @@ export const CurrencyToggle = ({ activeCurrency, onSelect }: CurrencyToggleProps
     return (
         <View
             className="flex-row mx-4 mb-3 p-1 rounded-2xl"
-            style={{ backgroundColor: tokens.bgElevated, borderColor: tokens.borderSubtle, borderWidth: 1 }}
+            style={{
+                backgroundColor: tokens.bgElevated,
+                borderColor: tokens.borderSubtle,
+                borderWidth: 1,
+            }}
         >
             {currencies.map((currency) => {
                 const isActive = activeCurrency === currency;
@@ -31,8 +35,14 @@ export const CurrencyToggle = ({ activeCurrency, onSelect }: CurrencyToggleProps
                             LayoutAnimation.configureNext({
                                 duration: 160,
                                 update: { type: LayoutAnimation.Types.easeInEaseOut },
-                                create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                                delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                create: {
+                                    type: LayoutAnimation.Types.easeInEaseOut,
+                                    property: LayoutAnimation.Properties.opacity,
+                                },
+                                delete: {
+                                    type: LayoutAnimation.Types.easeInEaseOut,
+                                    property: LayoutAnimation.Properties.opacity,
+                                },
                             });
                             await triggerSelectionHaptic();
                             onSelect(currency);
@@ -47,7 +57,10 @@ export const CurrencyToggle = ({ activeCurrency, onSelect }: CurrencyToggleProps
                             backgroundColor: isActive ? tokens.accent : 'transparent',
                         }}
                     >
-                        <Text className="font-semibold text-base" style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}>
+                        <Text
+                            className="font-semibold text-base"
+                            style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}
+                        >
                             {currency}
                         </Text>
                     </Pressable>

@@ -33,8 +33,14 @@ export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => 
                                 LayoutAnimation.configureNext({
                                     duration: 160,
                                     update: { type: LayoutAnimation.Types.easeInEaseOut },
-                                    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                                    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                    create: {
+                                        type: LayoutAnimation.Types.easeInEaseOut,
+                                        property: LayoutAnimation.Properties.opacity,
+                                    },
+                                    delete: {
+                                        type: LayoutAnimation.Types.easeInEaseOut,
+                                        property: LayoutAnimation.Properties.opacity,
+                                    },
                                 });
                                 await triggerSelectionHaptic();
                                 onSelect(tf);
@@ -51,7 +57,10 @@ export const TimeFilters = ({ activeTimeframe, onSelect }: TimeFiltersProps) => 
                                 borderWidth: 1,
                             }}
                         >
-                            <Text className="font-semibold text-sm" style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}>
+                            <Text
+                                className="font-semibold text-sm"
+                                style={{ color: isActive ? '#ffffff' : tokens.textSecondary }}
+                            >
                                 {tf}
                             </Text>
                         </Pressable>

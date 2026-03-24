@@ -16,7 +16,11 @@ export const MarketTabs = ({ activeMarket, onSelect, compact = false }: MarketTa
     return (
         <View
             className={`flex-row p-1 ${compact ? 'rounded-xl flex-1' : 'rounded-2xl mx-4 mb-3'}`}
-            style={{ backgroundColor: tokens.bgElevated, borderColor: tokens.borderSubtle, borderWidth: 1 }}
+            style={{
+                backgroundColor: tokens.bgElevated,
+                borderColor: tokens.borderSubtle,
+                borderWidth: 1,
+            }}
         >
             {(['AR', 'US'] as MarketType[]).map((market) => {
                 const isActive = activeMarket === market;

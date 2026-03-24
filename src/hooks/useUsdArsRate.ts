@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@core/query/queryKeys';
 import { fetchUsdArsRate } from '../services/fx';
 
 export const useUsdArsRate = (enabled: boolean) =>
     useQuery<number, Error>({
-        queryKey: ['fxRate', 'USD_ARS'],
+        queryKey: queryKeys.fxRate(),
         queryFn: fetchUsdArsRate,
         enabled,
         staleTime: 4 * 60 * 1000,

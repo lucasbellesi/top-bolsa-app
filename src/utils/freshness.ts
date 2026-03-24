@@ -2,7 +2,7 @@ import { DataFreshnessType, DataSourceType } from '../types';
 
 export const mapSourceToFreshness = (
     source: DataSourceType,
-    stale?: boolean
+    stale?: boolean,
 ): DataFreshnessType => {
     if (source === 'LIVE' && !stale) {
         return 'fresh';

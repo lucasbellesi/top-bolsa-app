@@ -44,7 +44,13 @@ export const CompanyProfileCard = ({
     const companyName = profile?.companyName || fallbackCompanyName;
     const facts = [
         profile?.marketCap
-            ? { label: 'Market cap', value: formatMarketCap(profile.marketCap, profile.market === 'US' ? 'USD' : 'ARS') }
+            ? {
+                  label: 'Market cap',
+                  value: formatMarketCap(
+                      profile.marketCap,
+                      profile.market === 'US' ? 'USD' : 'ARS',
+                  ),
+              }
             : null,
         profile?.sector ? { label: 'Sector', value: profile.sector } : null,
         profile?.industry ? { label: 'Industry', value: profile.industry } : null,
@@ -92,7 +98,11 @@ export const CompanyProfileCard = ({
                             <Text className="text-xs" style={{ color: tokens.textMuted }}>
                                 {fact.label}
                             </Text>
-                            <Text className="mt-1 text-sm font-semibold" style={{ color: tokens.textSecondary }} numberOfLines={2}>
+                            <Text
+                                className="mt-1 text-sm font-semibold"
+                                style={{ color: tokens.textSecondary }}
+                                numberOfLines={2}
+                            >
                                 {fact.value}
                             </Text>
                         </View>
@@ -105,7 +115,12 @@ export const CompanyProfileCard = ({
                     <Text className="text-xs" style={{ color: tokens.textMuted }}>
                         Website
                     </Text>
-                    <Text className="mt-1 text-sm" style={{ color: tokens.textSecondary }} numberOfLines={1} ellipsizeMode="tail">
+                    <Text
+                        className="mt-1 text-sm"
+                        style={{ color: tokens.textSecondary }}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                    >
                         {profile?.website}
                     </Text>
                 </View>

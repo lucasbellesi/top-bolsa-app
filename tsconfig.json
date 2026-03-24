@@ -1,7 +1,15 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true
-  },
-  "exclude": ["supabase/functions"]
+    "extends": "expo/tsconfig.base",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@app/*": ["src/*"],
+            "@core/*": ["src/core/*"],
+            "@features/*": ["src/features/*"],
+            "@services/*": ["src/services/*"],
+            "@shared/*": ["src/shared/*"]
+        },
+        "strict": true
+    },
+    "exclude": ["supabase/functions"]
 }
