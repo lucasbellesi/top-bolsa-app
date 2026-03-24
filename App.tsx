@@ -5,6 +5,7 @@ import { DefaultTheme, DarkTheme, NavigationContainer } from '@react-navigation/
 import { Platform, UIManager } from 'react-native';
 import { RootNavigator } from '@core/navigation';
 import { ThemeProvider, useAppTheme } from '@core/theme';
+import { WatchlistProvider } from '@features/watchlist/WatchlistContext';
 
 const queryClient = new QueryClient();
 
@@ -41,7 +42,9 @@ export default function App() {
     return (
         <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-                <AppNavigation />
+                <WatchlistProvider>
+                    <AppNavigation />
+                </WatchlistProvider>
             </ThemeProvider>
         </QueryClientProvider>
     );

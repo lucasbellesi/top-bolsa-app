@@ -9,8 +9,10 @@ import { SourceBadge } from '@shared/ui/SourceBadge';
 interface MarketScreenHeaderProps {
     isFetching: boolean;
     lastUpdatedAt: number | null;
-    source: DataSourceType;
+    source?: DataSourceType;
     sourceHint: string | null;
+    subtitle?: string;
+    title?: string;
 }
 
 export const MarketScreenHeader = ({
@@ -18,6 +20,8 @@ export const MarketScreenHeader = ({
     lastUpdatedAt,
     source,
     sourceHint,
+    subtitle = 'Real-time market leaders',
+    title = 'Top Gainers',
 }: MarketScreenHeaderProps) => {
     const { tokens } = useAppTheme();
 
@@ -27,14 +31,14 @@ export const MarketScreenHeader = ({
                 className="text-4xl font-extrabold tracking-tight"
                 style={[appTypography.heading, { color: tokens.textPrimary }]}
             >
-                Top Gainers
+                {title}
             </Text>
             <Text className="mt-1 text-lg" style={{ color: tokens.textSecondary }}>
-                Real-time market leaders
+                {subtitle}
             </Text>
 
             <View className="mt-3 flex-row items-center flex-wrap gap-2">
-                <SourceBadge source={source} />
+                {source ? <SourceBadge source={source} /> : null}
                 {lastUpdatedAt ? (
                     <Text className="text-xs" style={{ color: tokens.textMuted }}>
                         Last update: {formatClockTime(lastUpdatedAt)}

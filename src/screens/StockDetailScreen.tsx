@@ -10,6 +10,8 @@ import { StockChartCard } from '@features/stock-detail/components/StockChartCard
 import { StockSummaryCard } from '@features/stock-detail/components/StockSummaryCard';
 import { useDetailHeaderState } from '@features/stock-detail/hooks/useDetailHeaderState';
 import { useDisplayCurrency } from '@features/shared/hooks/useDisplayCurrency';
+import { WatchlistToggleButton } from '@features/watchlist/components/WatchlistToggleButton';
+import { useWatchlist } from '@features/watchlist/WatchlistContext';
 import { convertStockDetailForDisplayCurrency } from '@shared/lib/currencyDisplay';
 import { FeedbackState } from '@shared/ui/FeedbackState';
 
@@ -19,11 +21,13 @@ import { StockDetailSkeleton } from '../components/StockDetailSkeleton';
 import { useCompanyProfile } from '../hooks/useCompanyProfile';
 import { useStockDetail } from '../hooks/useStockDetail';
 import type { DetailRangeType } from '../types';
+import { triggerSelectionHaptic } from '../utils/feedback';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StockDetail'>;
 
 export const StockDetailScreen = ({ route }: Props) => {
     const { isDark, tokens } = useAppTheme();
+    const { isInWatchlist, toggleWatchlist } = useWatchlist();
     const {
         ticker,
         market,
@@ -86,6 +90,7 @@ export const StockDetailScreen = ({ route }: Props) => {
     const chartColor = displayData.percentChange >= 0 ? tokens.positive : tokens.negative;
     const displayCompanyName =
         companyProfile?.companyName || initialCompanyName || displayData.ticker;
+    const isWatchlisted = isInWatchlist(displayData.ticker, displayData.market);
     const series = displayData.series;
     const firstValue = series[0]?.value ?? displayData.price;
     const absoluteChange = displayData.price - firstValue;
@@ -103,6 +108,21 @@ export const StockDetailScreen = ({ route }: Props) => {
         AccessibilityInfo.announceForAccessibility(`Detail range set to ${nextRange}`);
     };
 
+    const handleWatchlistToggle = async () => {
+        await triggerSelectionHaptic();
+        const wasAdded = toggleWatchlist({
+            ticker: displayData.ticker,
+            market: displayData.market,
+            companyName: displayCompanyName,
+        });
+
+        AccessibilityInfo.announceForAccessibility(
+            wasAdded
+                ? `${displayData.ticker} added to watchlist`
+                : `${displayData.ticker} removed from watchlist`,
+        );
+    };
+
     return (
         <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
             <StatusBar
@@ -115,6 +135,12 @@ export const StockDetailScreen = ({ route }: Props) => {
                 freshness={freshness}
                 isFetching={isFetching}
                 marketLabel={displayData.market}
+                rightContent={
+                    <WatchlistToggleButton
+                        isSaved={isWatchlisted}
+                        onPress={handleWatchlistToggle}
+                    />
+                }
                 source={source}
                 sourceHint={sourceHint}
                 ticker={displayData.ticker}

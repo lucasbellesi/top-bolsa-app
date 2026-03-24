@@ -9,6 +9,10 @@ import { useAppTheme } from '@core/theme';
 import { MarketScreenHeader } from '@features/market-list/components/MarketScreenHeader';
 import { useMarketHeaderState } from '@features/market-list/hooks/useMarketHeaderState';
 import { useDisplayCurrency } from '@features/shared/hooks/useDisplayCurrency';
+import { FeedModeTabs } from '@features/watchlist/components/FeedModeTabs';
+import { useWatchlist } from '@features/watchlist/WatchlistContext';
+import { useWatchlistStocks } from '@features/watchlist/hooks/useWatchlistStocks';
+import type { FeedMode } from '@features/watchlist/types';
 import { TIMEFRAME_TO_DETAIL_RANGE } from '@shared/constants/market';
 import { convertStockListForDisplayCurrency } from '@shared/lib/currencyDisplay';
 import { FeedbackState } from '@shared/ui/FeedbackState';
@@ -24,9 +28,12 @@ import type { CurrencyType, MarketType, TimeframeType } from '../types';
 export const HomeScreen = () => {
     const { tokens, isDark } = useAppTheme();
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Home'>>();
+    const { entries, isHydrating, isInWatchlist } = useWatchlist();
+    const [feedMode, setFeedMode] = useState<FeedMode>('MARKET');
     const [market, setMarket] = useState<MarketType>('AR');
     const [timeframe, setTimeframe] = useState<TimeframeType>('1D');
     const [currency, setCurrency] = useState<CurrencyType>('ARS');
+    const detailRange = TIMEFRAME_TO_DETAIL_RANGE[timeframe];
 
     const {
         data: rankingData,
@@ -46,13 +53,34 @@ export const HomeScreen = () => {
         showFxUnavailableWarning,
         usdToArsRate,
     } = useDisplayCurrency(market, currency);
-    const isLoadingWithFx =
-        isLoading || (needsFxConversion && isFxLoading && conversionFactor === null);
+    const {
+        hasEntries: hasWatchlistEntries,
+        isError: isWatchlistError,
+        isFetching: isWatchlistFetching,
+        isLoading: isWatchlistLoading,
+        lastUpdatedAt: watchlistLastUpdatedAt,
+        refetch: refetchWatchlist,
+        stocks: watchlistStocks,
+    } = useWatchlistStocks(entries, market, detailRange);
+    const isWatchlistMode = feedMode === 'WATCHLIST';
 
-    const displayStocks = useMemo(() => {
+    const marketDisplayStocks = useMemo(() => {
         const rankingStocks = rankingData?.stocks ?? [];
         return convertStockListForDisplayCurrency(rankingStocks, conversionFactor);
     }, [rankingData?.stocks, conversionFactor]);
+    const watchlistDisplayStocks = useMemo(
+        () => convertStockListForDisplayCurrency(watchlistStocks, conversionFactor),
+        [watchlistStocks, conversionFactor],
+    );
+    const displayStocks = isWatchlistMode ? watchlistDisplayStocks : marketDisplayStocks;
+    const headerLastUpdatedAt = isWatchlistMode ? watchlistLastUpdatedAt : lastUpdatedAt;
+    const headerIsFetching = isWatchlistMode
+        ? isWatchlistFetching && displayStocks.length > 0
+        : isFetching && displayStocks.length > 0;
+    const isLoadingWithFx =
+        (isWatchlistMode ? isHydrating || isWatchlistLoading : isLoading) ||
+        (needsFxConversion && isFxLoading && conversionFactor === null);
+    const handleRefresh = isWatchlistMode ? refetchWatchlist : refetch;
 
     const handleMarketSelect = (nextMarket: MarketType) => {
         setMarket(nextMarket);
@@ -71,6 +99,13 @@ export const HomeScreen = () => {
         AccessibilityInfo.announceForAccessibility(`Currency set to ${nextCurrency}`);
     };
 
+    const handleFeedModeSelect = (nextMode: FeedMode) => {
+        setFeedMode(nextMode);
+        AccessibilityInfo.announceForAccessibility(
+            nextMode === 'WATCHLIST' ? 'Watchlist feed selected' : 'Market feed selected',
+        );
+    };
+
     return (
         <SafeAreaView className="flex-1" style={{ backgroundColor: tokens.bgPrimary }}>
             <StatusBar
@@ -79,14 +114,20 @@ export const HomeScreen = () => {
             />
 
             <MarketScreenHeader
-                isFetching={isFetching && displayStocks.length > 0}
-                lastUpdatedAt={lastUpdatedAt}
-                source={source}
-                sourceHint={sourceHint}
+                isFetching={headerIsFetching}
+                lastUpdatedAt={headerLastUpdatedAt}
+                source={isWatchlistMode ? undefined : source}
+                sourceHint={isWatchlistMode ? null : sourceHint}
+                subtitle={
+                    isWatchlistMode
+                        ? 'Your saved stocks for this market'
+                        : 'Real-time market leaders'
+                }
+                title={isWatchlistMode ? 'Watchlist' : 'Top Gainers'}
             />
 
             <View className="px-4 pb-2">
-                {source === 'MOCK' ? (
+                {source === 'MOCK' && !isWatchlistMode ? (
                     <Text className="mt-1 text-xs" style={{ color: tokens.textMuted }}>
                         Demo mode: showing simulated prices.
                     </Text>
@@ -103,6 +144,7 @@ export const HomeScreen = () => {
                 ) : null}
             </View>
 
+            <FeedModeTabs activeMode={feedMode} onSelect={handleFeedModeSelect} />
             <MarketTabs activeMarket={market} onSelect={handleMarketSelect} />
             <CurrencyToggle activeCurrency={currency} onSelect={handleCurrencySelect} />
             <TimeFilters activeTimeframe={timeframe} onSelect={handleTimeframeSelect} />
@@ -119,6 +161,18 @@ export const HomeScreen = () => {
             {displayStocks.length === 0 ? (
                 isLoadingWithFx ? (
                     <StockListSkeleton rows={10} />
+                ) : isWatchlistMode && !hasWatchlistEntries ? (
+                    <FeedbackState
+                        description={`Open any ${market === 'AR' ? 'BYMA' : 'US'} stock and save it to your watchlist.`}
+                        title="Your watchlist is empty."
+                    />
+                ) : isWatchlistMode && isWatchlistError ? (
+                    <FeedbackState
+                        actionLabel="Tap to retry"
+                        onAction={handleRefresh}
+                        title="Failed to load your watchlist."
+                        tone="negative"
+                    />
                 ) : isError ? (
                     <FeedbackState
                         actionLabel="Tap to retry"
@@ -130,8 +184,12 @@ export const HomeScreen = () => {
                     <FeedbackState
                         actionLabel="Retry now"
                         description="Try again in a few minutes."
-                        onAction={refetch}
-                        title="Market data temporarily unavailable."
+                        onAction={handleRefresh}
+                        title={
+                            isWatchlistMode
+                                ? 'Watchlist data temporarily unavailable.'
+                                : 'Market data temporarily unavailable.'
+                        }
                     />
                 )
             ) : (
@@ -141,24 +199,27 @@ export const HomeScreen = () => {
                     renderItem={({ item, index }) => (
                         <StockListItem
                             stock={item}
+                            isWatchlisted={isInWatchlist(item.ticker, item.market)}
                             index={index}
                             currency={effectiveCurrency}
-                            freshness={freshness}
-                            lastUpdatedAt={lastUpdatedAt || undefined}
+                            freshness={isWatchlistMode ? 'fresh' : freshness}
+                            lastUpdatedAt={headerLastUpdatedAt || undefined}
                             onPress={() =>
                                 navigation.navigate('StockDetail', {
                                     ticker: item.ticker,
                                     market: item.market,
                                     currency: effectiveCurrency,
-                                    initialRange: TIMEFRAME_TO_DETAIL_RANGE[timeframe],
-                                    source,
+                                    initialRange: detailRange,
+                                    source: isWatchlistMode ? undefined : source,
                                     companyName: item.companyName,
                                 })
                             }
                         />
                     )}
-                    refreshing={isFetching && !isLoadingWithFx}
-                    onRefresh={refetch}
+                    refreshing={
+                        (isWatchlistMode ? isWatchlistFetching : isFetching) && !isLoadingWithFx
+                    }
+                    onRefresh={handleRefresh}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 56 }}
                     initialNumToRender={10}

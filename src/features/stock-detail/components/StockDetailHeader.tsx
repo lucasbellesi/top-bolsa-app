@@ -11,6 +11,7 @@ interface StockDetailHeaderProps {
     freshness: DataFreshnessType;
     isFetching: boolean;
     marketLabel: string;
+    rightContent?: React.ReactNode;
     source: DataSourceType;
     sourceHint: string | null;
     ticker: string;
@@ -22,6 +23,7 @@ export const StockDetailHeader = ({
     freshness,
     isFetching,
     marketLabel,
+    rightContent,
     source,
     sourceHint,
     ticker,
@@ -31,12 +33,15 @@ export const StockDetailHeader = ({
 
     return (
         <View className="px-4 pt-4 pb-2">
-            <Text
-                className="text-4xl font-extrabold tracking-tight"
-                style={[appTypography.heading, { color: tokens.textPrimary }]}
-            >
-                {ticker}
-            </Text>
+            <View className="flex-row items-start justify-between gap-3">
+                <Text
+                    className="text-4xl font-extrabold tracking-tight flex-1"
+                    style={[appTypography.heading, { color: tokens.textPrimary }]}
+                >
+                    {ticker}
+                </Text>
+                {rightContent ? <View className="pt-1">{rightContent}</View> : null}
+            </View>
             <Text
                 className="mt-1 text-lg font-semibold"
                 style={{ color: tokens.textSecondary }}

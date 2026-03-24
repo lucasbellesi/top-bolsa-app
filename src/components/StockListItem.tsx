@@ -2,7 +2,7 @@ import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { CurrencyType, DataFreshnessType, StockData } from '../types';
 import { LineChart } from 'react-native-wagmi-charts';
-import { TrendingDown, TrendingUp } from 'lucide-react-native';
+import { Star, TrendingDown, TrendingUp } from 'lucide-react-native';
 import { useAppTheme } from '../theme/ThemeContext';
 import { appTypography } from '../theme/typography';
 import { formatCurrencyValue, formatPercent } from '../utils/format';
@@ -14,6 +14,7 @@ interface StockListItemProps {
     onPress?: () => void;
     freshness?: DataFreshnessType;
     lastUpdatedAt?: number;
+    isWatchlisted?: boolean;
 }
 
 const StockListItemComponent = ({
@@ -23,6 +24,7 @@ const StockListItemComponent = ({
     onPress,
     freshness = 'fresh',
     lastUpdatedAt,
+    isWatchlisted = false,
 }: StockListItemProps) => {
     const { tokens } = useAppTheme();
     const isPositive = stock.percentChange >= 0;
@@ -70,7 +72,7 @@ const StockListItemComponent = ({
                 android_ripple={{ color: `${tokens.accent}22`, borderless: false }}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`Open details for ${stock.ticker} (${companyName}), ${formattedChange}, ${freshness}${lastUpdatedAt ? `, updated at ${new Date(lastUpdatedAt).toLocaleTimeString()}` : ''}`}
+                accessibilityLabel={`Open details for ${stock.ticker} (${companyName}), ${formattedChange}, ${freshness}${lastUpdatedAt ? `, updated at ${new Date(lastUpdatedAt).toLocaleTimeString()}` : ''}${isWatchlisted ? ', saved to watchlist' : ''}`}
                 className="min-h-[118px] px-4 py-4 flex-row items-center"
                 style={({ pressed }) => ({ opacity: pressed ? 0.94 : 1 })}
             >
@@ -86,14 +88,24 @@ const StockListItemComponent = ({
                 </View>
 
                 <View className="flex-1 min-w-0 pr-3">
-                    <Text
-                        className="text-xl font-extrabold"
-                        style={[appTypography.heading, { color: tokens.textPrimary }]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                    >
-                        {stock.ticker}
-                    </Text>
+                    <View className="flex-row items-center">
+                        <Text
+                            className="text-xl font-extrabold"
+                            style={[appTypography.heading, { color: tokens.textPrimary }]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                        >
+                            {stock.ticker}
+                        </Text>
+                        {isWatchlisted ? (
+                            <Star
+                                color={tokens.accent}
+                                fill={tokens.accent}
+                                size={13}
+                                style={{ marginLeft: 6 }}
+                            />
+                        ) : null}
+                    </View>
                     <Text
                         className="text-xs mt-1 leading-5"
                         style={{ color: tokens.textMuted }}
